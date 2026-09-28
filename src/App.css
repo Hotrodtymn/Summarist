@@ -740,3 +740,183 @@ a {
   cursor: pointer;
 }
 
+/* AUDIO PLAYER */
+
+.player-page {
+  padding: 60px 0 100px;
+}
+
+.player-page__container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.player-page__back {
+  display: inline-block;
+  margin-bottom: 40px;
+  color: #52616b;
+  font-weight: 600;
+}
+
+.player-page__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 40px;
+  margin-bottom: 50px;
+}
+
+.player-page__image {
+  width: 220px;
+  height: 300px;
+  object-fit: cover;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.player-page__header h1 {
+  font-size: 38px;
+  line-height: 1.2;
+  margin-bottom: 10px;
+}
+
+.player-page__header p {
+  color: #71808a;
+  font-size: 16px;
+}
+
+.player-page__summary {
+  max-width: 800px;
+  margin-bottom: 50px;
+}
+
+.player-page__summary h2,
+.player-page__audio h2 {
+  font-size: 26px;
+  margin-bottom: 20px;
+}
+
+.player-page__summary p {
+  color: #52616b;
+  font-size: 16px;
+  line-height: 1.8;
+}
+
+/* CUSTOM AUDIO PLAYER */
+
+.audio-player {
+  width: 100%;
+  max-width: 700px;
+  margin-top: 24px;
+}
+
+.audio-player__times {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: #666;
+}
+
+.audio-player__seek {
+  display: block;
+  width: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.audio-player__controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.audio-player__controls button {
+  width: 48px;
+  height: 48px;
+  padding: 0;
+
+  border: none;
+  border-radius: 50%;
+
+  background: #eee;
+  color: #032b41;
+
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.audio-player__controls button:hover {
+  background: #ddd;
+}
+
+.audio-player__controls button:nth-child(2) {
+  width: 60px;
+  height: 60px;
+
+  background: #032b41;
+  color: #fff;
+
+  font-size: 22px;
+}
+
+.audio-player__controls button:nth-child(2):hover {
+  background: #06415f;
+}
+
+/* PLAYER SKELETON */
+
+.skeleton-title {
+  width: 300px;
+  height: 45px;
+  margin-bottom: 20px;
+}
+
+.skeleton-text {
+  width: 500px;
+  height: 20px;
+  margin-bottom: 12px;
+}
+
+.skeleton-player {
+  width: 100%;
+  max-width: 700px;
+  height: 140px;
+  margin-top: 40px;
+}
+
+/* PLAYER MOBILE */
+
+@media (max-width: 700px) {
+  .player-page {
+    padding: 40px 0 80px;
+  }
+
+  .player-page__header {
+    flex-direction: column;
+    gap: 24px;
+    margin-bottom: 40px;
+  }
+
+  .player-page__image {
+    width: 180px;
+    height: 250px;
+  }
+
+  .player-page__header h1 {
+    font-size: 32px;
+  }
+
+  .player-page__summary {
+    margin-bottom: 40px;
+  }
+
+  .audio-player__controls {
+    gap: 10px;
+  }
+}
+
+
+

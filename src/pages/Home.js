@@ -12,13 +12,11 @@ function Home() {
             </h1>
 
             <p>
-              Summarist gives you the key ideas from the world's best
-              nonfiction books in just a few minutes.
+              Summarist gives you the key ideas from the world's best nonfiction
+              books in just a few minutes.
             </p>
 
-            <button className="hero__button">
-              Start learning
-            </button>
+            <button className="hero__button">Start learning</button>
           </div>
 
           <div className="hero__image">
