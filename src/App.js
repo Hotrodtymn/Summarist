@@ -1,101 +1,77 @@
 import "./App.css";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+} from "react-router-dom";
 
+import logo from "./assets/logo.png";
+
+import Home from "./pages/Home";
+import ForYou from "./pages/ForYou";
+import Book from "./pages/Book";
+
+import { AuthProvider, useAuth } from "./context/AuthContext";
+import { signOut } from "firebase/auth";
+import { auth } from "./firebase";
+
+function Navbar() {
+  const { currentUser } = useAuth();
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
+
+  return (
+    <header className="navbar">
+      <div className="navbar__container">
+        <Link to="/" className="navbar__logo">
+          <img src={logo} alt="Summarist" />
+        </Link>
+
+        <nav className="navbar__links">
+          <Link to="/for-you">For you</Link>
+          <Link to="/library">Library</Link>
+          <Link to="/settings">My account</Link>
+        </nav>
+
+        {currentUser ? (
+          <button
+            className="navbar__button"
+            onClick={handleLogout}
+          >
+            Log out
+          </button>
+        ) : (
+          <Link to="/settings" className="navbar__button">
+            Log in
+          </Link>
+        )}
+      </div>
+    </header>
+  );
+}
 
 function App() {
   return (
-    <div className="App">
-      <header className="navbar">
-        <div className="navbar__container">
-          <div className="navbar__logo">
-            <span>summarist</span>
-          </div>
+    <Router>
+      <AuthProvider>
+        <div className="App">
+          <Navbar />
 
-          <nav className="navbar__links">
-            <a href="/">For you</a>
-            <a href="/">Library</a>
-            <a href="/">My account</a>
-          </nav>
-
-          <button className="navbar__button">
-            Log in
-          </button>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/for-you" element={<ForYou />} />
+            <Route path="/book/:id" element={<Book />} />
+          </Routes>
         </div>
-      </header>
-
-      <main>
-        <section className="hero">
-          <div className="hero__container">
-            <div className="hero__content">
-              <h1>
-                Learn something new
-                <span> every day.</span>
-              </h1>
-
-              <p>
-                Summarist gives you the key ideas from the world's best
-                nonfiction books in just a few minutes.
-              </p>
-
-              <button className="hero__button">
-                Start learning
-              </button>
-            </div>
-          </div>
-        </section>
-
-        <section className="books">
-          <div className="books__container">
-            <h2>Popular books</h2>
-
-            <div className="books__grid">
-              <div className="book-card">
-                <img
-                  src={atomicHabits}
-                  alt="Atomic Habits"
-                  className="book-card__image"
-                />
-
-                <h3>Atomic Habits</h3>
-                <p>James Clear</p>
-              </div>
-
-              <div className="book-card">
-                <img
-                  src={sevenHabits}
-                  alt="The 7 Habits of Highly Effective People"
-                  className="book-card__image"
-                />
-
-                <h3>The 7 Habits of Highly Effective People</h3>
-                <p>Stephen R. Covey</p>
-              </div>
-
-              <div className="book-card">
-                <img
-                  src={howToWinFriends}
-                  alt="How to Win Friends and Influence People"
-                  className="book-card__image"
-                />
-
-                <h3>How to Win Friends and Influence People</h3>
-                <p>Dale Carnegie</p>
-              </div>
-
-              <div className="book-card">
-                <img
-                  src={richDadPoorDad}
-                  alt="Rich Dad Poor Dad"
-                  className="book-card__image"
-                />
-
-                <h3>Rich Dad Poor Dad</h3>
-                <p>Robert Kiyosaki</p>
-              </div>
-            </div>
-          </div>
-        </section>
-      </main>
-    </div>
+      </AuthProvider>
+    </Router>
   );
 }
 
