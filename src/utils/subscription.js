@@ -1,60 +1,53 @@
-import { get, ref, update } from "firebase/database";
+import { get, ref } from "firebase/database";
 import { database } from "../firebase";
 
-export async function getSubscriptionStatus(userId) {
+export async function getSubscription(userId) {
   if (!userId) {
-    return "basic";
+    return {
+      plan: "basic",
+      status: "inactive",
+    };
   }
 
   try {
-    const userRef = ref(
-      database,
-      `users/${userId}/subscription`
-    );
+    const subscriptionRef = ref(database, `users/${userId}/subscription`);
 
-    const snapshot = await get(userRef);
+    const snapshot = await get(subscriptionRef);
 
     if (!snapshot.exists()) {
-      return "basic";
+      return {
+        plan: "basic",
+        status: "inactive",
+      };
     }
 
     const subscription = snapshot.val();
 
-    return subscription.plan || "basic";
+    return {
+      plan: subscription.plan || "basic",
+      status: subscription.status || "inactive",
+    };
   } catch (error) {
-    console.error(
-      "Failed to get subscription status:",
-      error
-    );
+    console.error("Failed to get subscription:", error);
 
-    return "basic";
+    return {
+      plan: "basic",
+      status: "inactive",
+    };
   }
 }
 
-export async function setSubscriptionStatus(
-  userId,
-  plan
-) {
-  if (!userId) {
-    return;
-  }
+export async function getSubscriptionStatus(userId) {
+  const subscription = await getSubscription(userId);
 
-  try {
-    const subscriptionRef = ref(
-      database,
-      `users/${userId}/subscription`
-    );
+  return subscription.plan;
+}
 
-    await update(subscriptionRef, {
-      plan,
-      updatedAt: Date.now(),
-    });
-  } catch (error) {
-    console.error(
-      "Failed to update subscription status:",
-      error
-    );
+export async function isPremiumUser(userId) {
+  const subscription = await getSubscription(userId);
 
-    throw error;
-  }
+  return (
+    subscription.plan === "premium" &&
+    (subscription.status === "trialing" || subscription.status === "active")
+  );
 }
