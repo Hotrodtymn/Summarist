@@ -1,8 +1,15 @@
-import landing from "../assets/landing.png";
+import { useNavigate } from "react-router-dom";
+import landingImage from "../assets/landing.png";
 
 function Home() {
+  const navigate = useNavigate();
+
+  const handleStartLearning = () => {
+    navigate("/for-you");
+  };
+
   return (
-    <main>
+    <main className="home-page">
       <section className="hero">
         <div className="hero__container">
           <div className="hero__content">
@@ -12,15 +19,24 @@ function Home() {
             </h1>
 
             <p>
-              Summarist gives you the key ideas from the world's best nonfiction
-              books in just a few minutes.
+              Summarist helps you discover the key ideas from the world's
+              greatest books in just a few minutes.
             </p>
 
-            <button className="hero__button">Start learning</button>
+            <button
+              type="button"
+              className="hero__button"
+              onClick={handleStartLearning}
+            >
+              Start learning
+            </button>
           </div>
 
           <div className="hero__image">
-            <img src={landing} alt="Summarist books" />
+            <img
+              src={landingImage}
+              alt="Learn with Summarist"
+            />
           </div>
         </div>
       </section>

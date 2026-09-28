@@ -1,7 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import AuthModal from "../components/AuthModal";
+import {
+  get,
+  ref,
+  set,
+} from "firebase/database";
+
+import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import AuthModal from "../components/AuthModal";
 
 function Book() {
   const { id } = useParams();
@@ -11,6 +18,8 @@ function Book() {
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     const fetchBook = async () => {
@@ -31,6 +40,30 @@ function Book() {
     fetchBook();
   }, [id]);
 
+  useEffect(() => {
+    const checkLibrary = async () => {
+      if (!currentUser || !id) {
+        setIsSaved(false);
+        return;
+      }
+
+      try {
+        const libraryRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${id}`
+        );
+
+        const snapshot = await get(libraryRef);
+
+        setIsSaved(snapshot.exists());
+      } catch (error) {
+        console.error("Failed to check library:", error);
+      }
+    };
+
+    checkLibrary();
+  }, [currentUser, id]);
+
   const handleProtectedAction = () => {
     if (!currentUser) {
       setShowAuthModal(true);
@@ -40,27 +73,84 @@ function Book() {
     navigate(`/player/${id}`);
   };
 
-  const handleAddToLibrary = () => {
+  const handleAddToLibrary = async () => {
     if (!currentUser) {
       setShowAuthModal(true);
       return;
     }
 
-    console.log("Add book to library:", book);
+    if (!book || isSaving || isSaved) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const libraryRef = ref(
+        database,
+        `users/${currentUser.uid}/library/${book.id}`
+      );
+
+      await set(libraryRef, {
+        id: book.id,
+        title: book.title || "",
+        author: book.author || "",
+        subTitle: book.subTitle || "",
+        description: book.description || "",
+        imageLink: book.imageLink || "",
+        subscriptionRequired:
+          book.subscriptionRequired || false,
+        finished: false,
+        savedAt: Date.now(),
+      });
+
+      setIsSaved(true);
+    } catch (error) {
+      console.error("Failed to add book to library:", error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   if (loading) {
     return (
       <main className="book-page">
         <div className="book-page__container">
-          <div className="book-details">
-            <div className="book-details__image skeleton"></div>
+          <div className="book-page__content">
+            <div
+              className="skeleton"
+              style={{
+                width: "260px",
+                height: "390px",
+              }}
+            />
 
-            <div className="book-details__content">
-              <div className="skeleton skeleton-title"></div>
-              <div className="skeleton skeleton-text"></div>
-              <div className="skeleton skeleton-text"></div>
-              <div className="skeleton skeleton-button"></div>
+            <div style={{ flex: 1 }}>
+              <div
+                className="skeleton"
+                style={{
+                  width: "70%",
+                  height: "40px",
+                  marginBottom: "20px",
+                }}
+              />
+
+              <div
+                className="skeleton"
+                style={{
+                  width: "40%",
+                  height: "20px",
+                  marginBottom: "25px",
+                }}
+              />
+
+              <div
+                className="skeleton"
+                style={{
+                  width: "100%",
+                  height: "120px",
+                }}
+              />
             </div>
           </div>
         </div>
@@ -72,11 +162,8 @@ function Book() {
     return (
       <main className="book-page">
         <div className="book-page__container">
-          <p>Book not found.</p>
-
-          <Link to="/for-you">
-            ← Back to For You
-          </Link>
+          <h1>Book not found</h1>
+          <Link to="/for-you">Back to For You</Link>
         </div>
       </main>
     );
@@ -89,38 +176,50 @@ function Book() {
           ← Back to For You
         </Link>
 
-        <div className="book-details">
-          <div className="book-details__image">
-            <img
-              src={book.imageLink}
-              alt={book.title}
-            />
-          </div>
+        <div className="book-page__content">
+          <img
+            src={book.imageLink}
+            alt={book.title}
+            className="book-page__image"
+          />
 
-          <div className="book-details__content">
+          <div className="book-page__info">
             <h1>{book.title}</h1>
 
-            <p className="book-details__author">
+            <p className="book-page__author">
               {book.author}
             </p>
 
-            <p className="book-details__subtitle">
+            <p className="book-page__subtitle">
               {book.subTitle}
             </p>
 
-            <div className="book-details__buttons">
-              <button onClick={handleProtectedAction}>
-                Read
-              </button>
+            <p className="book-page__description">
+              {book.description}
+            </p>
 
-              <button onClick={handleProtectedAction}>
+            <div className="book-page__actions">
+              <button
+                type="button"
+                className="book-page__button"
+                onClick={handleProtectedAction}
+              >
                 Listen
               </button>
-            </div>
 
-            <button onClick={handleAddToLibrary}>
-              + Add title to My Library
-            </button>
+              <button
+                type="button"
+                className="book-page__button book-page__button--secondary"
+                onClick={handleAddToLibrary}
+                disabled={isSaving || isSaved}
+              >
+                {isSaving
+                  ? "Adding..."
+                  : isSaved
+                    ? "Added to Library"
+                    : "Add to Library"}
+              </button>
+            </div>
           </div>
         </div>
       </div>

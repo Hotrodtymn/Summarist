@@ -16,8 +16,6 @@ function Sidebar() {
     }
   };
 
-  const isActive = (path) => location.pathname === path;
-
   return (
     <aside className="sidebar">
       <div className="sidebar__logo">
@@ -30,7 +28,9 @@ function Sidebar() {
         <Link
           to="/for-you"
           className={`sidebar__link ${
-            isActive("/for-you") ? "sidebar__link--active" : ""
+            location.pathname === "/for-you"
+              ? "sidebar__link--active"
+              : ""
           }`}
         >
           <span className="sidebar__icon">⌂</span>
@@ -39,9 +39,7 @@ function Sidebar() {
 
         <Link
           to="/library"
-          className={`sidebar__link ${
-            isActive("/library") ? "sidebar__link--active" : ""
-          }`}
+          className="sidebar__link"
         >
           <span className="sidebar__icon">▣</span>
           <span>Library</span>
@@ -67,9 +65,7 @@ function Sidebar() {
 
         <Link
           to="/settings"
-          className={`sidebar__link ${
-            isActive("/settings") ? "sidebar__link--active" : ""
-          }`}
+          className="sidebar__link"
         >
           <span className="sidebar__icon">⚙</span>
           <span>Settings</span>
@@ -95,7 +91,10 @@ function Sidebar() {
             Log out
           </button>
         ) : (
-          <Link to="/settings" className="sidebar__login">
+          <Link
+            to="/settings"
+            className="sidebar__login"
+          >
             Log in
           </Link>
         )}

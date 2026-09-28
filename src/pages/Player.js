@@ -1,8 +1,18 @@
+
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import {
+  get,
+  ref,
+  update,
+} from "firebase/database";
+
+import { database } from "../firebase";
+import { useAuth } from "../context/AuthContext";
 
 function Player() {
   const { id } = useParams();
+  const { currentUser } = useAuth();
 
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -10,6 +20,7 @@ function Player() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [isFinished, setIsFinished] = useState(false);
 
   const audioRef = useRef(null);
 
@@ -21,6 +32,7 @@ function Player() {
         );
 
         const data = await response.json();
+
         setBook(data);
       } catch (error) {
         console.error("Failed to fetch book:", error);
@@ -31,6 +43,36 @@ function Player() {
 
     fetchBook();
   }, [id]);
+
+  useEffect(() => {
+    const checkFinished = async () => {
+      if (!currentUser || !id) {
+        return;
+      }
+
+      try {
+        const bookRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${id}`
+        );
+
+        const snapshot = await get(bookRef);
+
+        if (snapshot.exists()) {
+          const libraryBook = snapshot.val();
+
+          setIsFinished(libraryBook.finished === true);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to check finished status:",
+          error
+        );
+      }
+    };
+
+    checkFinished();
+  }, [currentUser, id]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -47,27 +89,72 @@ function Player() {
       setCurrentTime(audio.currentTime);
     };
 
-    const handleEnded = () => {
+    const handleEnded = async () => {
       setIsPlaying(false);
       setCurrentTime(0);
+
+      if (!currentUser || !book) {
+        return;
+      }
+
+      try {
+        const bookRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${book.id}`
+        );
+
+        const snapshot = await get(bookRef);
+
+        if (!snapshot.exists()) {
+          return;
+        }
+
+        await update(bookRef, {
+          finished: true,
+          finishedAt: Date.now(),
+        });
+
+        setIsFinished(true);
+      } catch (error) {
+        console.error(
+          "Failed to mark book as finished:",
+          error
+        );
+      }
     };
 
-    audio.addEventListener("loadedmetadata", handleLoadedMetadata);
-    audio.addEventListener("timeupdate", handleTimeUpdate);
-    audio.addEventListener("ended", handleEnded);
+    audio.addEventListener(
+      "loadedmetadata",
+      handleLoadedMetadata
+    );
+
+    audio.addEventListener(
+      "timeupdate",
+      handleTimeUpdate
+    );
+
+    audio.addEventListener(
+      "ended",
+      handleEnded
+    );
 
     return () => {
       audio.removeEventListener(
         "loadedmetadata",
         handleLoadedMetadata
       );
+
       audio.removeEventListener(
         "timeupdate",
         handleTimeUpdate
       );
-      audio.removeEventListener("ended", handleEnded);
+
+      audio.removeEventListener(
+        "ended",
+        handleEnded
+      );
     };
-  }, [book]);
+  }, [book, currentUser]);
 
   const handlePlayPause = () => {
     const audio = audioRef.current;
@@ -108,7 +195,10 @@ function Player() {
 
     audio.currentTime = Math.max(
       0,
-      Math.min(audio.currentTime + seconds, audio.duration || 0)
+      Math.min(
+        audio.currentTime + seconds,
+        audio.duration || 0
+      )
     );
   };
 
@@ -122,6 +212,7 @@ function Player() {
     const newTime = Number(event.target.value);
 
     audio.currentTime = newTime;
+
     setCurrentTime(newTime);
   };
 
@@ -142,10 +233,42 @@ function Player() {
     return (
       <main className="player-page">
         <div className="player-page__container">
-          <div className="skeleton skeleton-title"></div>
-          <div className="skeleton skeleton-text"></div>
-          <div className="skeleton skeleton-text"></div>
-          <div className="skeleton skeleton-player"></div>
+          <div className="player-page__header">
+            <div
+              className="skeleton"
+              style={{
+                width: "220px",
+                height: "330px",
+              }}
+            />
+
+            <div style={{ flex: 1 }}>
+              <div
+                className="skeleton"
+                style={{
+                  width: "70%",
+                  height: "40px",
+                  marginBottom: "20px",
+                }}
+              />
+
+              <div
+                className="skeleton"
+                style={{
+                  width: "40%",
+                  height: "20px",
+                }}
+              />
+            </div>
+          </div>
+
+          <div
+            className="skeleton"
+            style={{
+              width: "100%",
+              height: "200px",
+            }}
+          />
         </div>
       </main>
     );
@@ -155,10 +278,10 @@ function Player() {
     return (
       <main className="player-page">
         <div className="player-page__container">
-          <p>Book not found.</p>
+          <h1>Book not found</h1>
 
           <Link to="/for-you">
-            ← Back to For You
+            Back to For You
           </Link>
         </div>
       </main>
@@ -168,8 +291,11 @@ function Player() {
   return (
     <main className="player-page">
       <div className="player-page__container">
-        <Link to="/for-you" className="player-page__back">
-          ← Back to For You
+        <Link
+          to={`/book/${book.id}`}
+          className="book-page__back"
+        >
+          ← Back to Book
         </Link>
 
         <div className="player-page__header">
@@ -181,79 +307,83 @@ function Player() {
 
           <div>
             <h1>{book.title}</h1>
+
             <p>{book.author}</p>
+
+            {isFinished && (
+              <p
+                style={{
+                  marginTop: "15px",
+                  fontWeight: "700",
+                  color: "#2bd97c",
+                }}
+              >
+                Finished
+              </p>
+            )}
           </div>
         </div>
 
         <section className="player-page__summary">
           <h2>Summary</h2>
 
-          <p style={{ whiteSpace: "pre-line" }}>
-            {book.summary}
-          </p>
+          <p>{book.description}</p>
         </section>
 
-        <section className="player-page__audio">
-          <h2>Listen</h2>
-
+        <section className="audio-player">
           <audio
             ref={audioRef}
             src={book.audioLink}
             preload="metadata"
           />
 
-          <div className="audio-player">
-            <div className="audio-player__times">
-              <span>{formatTime(currentTime)}</span>
+          <input
+            type="range"
+            className="audio-player__progress"
+            min="0"
+            max={duration || 0}
+            value={currentTime}
+            onChange={handleSeek}
+          />
 
-              <span>{formatTime(duration)}</span>
-            </div>
+          <div className="audio-player__times">
+            <span>{formatTime(currentTime)}</span>
 
-            <input
-              type="range"
-              min="0"
-              max={duration || 0}
-              value={currentTime}
-              onChange={handleSeek}
-              className="audio-player__seek"
-              aria-label="Audio progress"
-            />
+            <span>{formatTime(duration)}</span>
+          </div>
 
-            <div className="audio-player__controls">
-              <button
-                type="button"
-                onClick={() => handleSkip(-15)}
-                aria-label="Skip backward 15 seconds"
-              >
-                -15
-              </button>
+          <div className="audio-player__controls">
+            <button
+              type="button"
+              className="audio-player__button"
+              onClick={() => handleSkip(-15)}
+            >
+              -15
+            </button>
 
-              <button
-                type="button"
-                onClick={handlePlayPause}
-                aria-label={
-                  isPlaying ? "Pause" : "Play"
-                }
-              >
-                {isPlaying ? "❚❚" : "▶"}
-              </button>
+            <button
+              type="button"
+              className="audio-player__button"
+              onClick={handleStop}
+            >
+              ■
+            </button>
 
-              <button
-                type="button"
-                onClick={handleStop}
-                aria-label="Stop"
-              >
-                ■
-              </button>
+            <button
+              type="button"
+              className="audio-player__button audio-player__button--main"
+              onClick={handlePlayPause}
+            >
+              {isPlaying ? "Ⅱ" : "▶"}
+            </button>
 
-              <button
-                type="button"
-                onClick={() => handleSkip(15)}
-                aria-label="Skip forward 15 seconds"
-              >
-                +15
-              </button>
-            </div>
+            <button
+              type="button"
+              className="audio-player__button"
+              onClick={() => handleSkip(15)}
+            >
+              +15
+            </button>
           </div>
         </section>
       </div>
