@@ -1,218 +1,178 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { getFunctions, httpsCallable } from "firebase/functions";
-import { ref, get, update } from "firebase/database";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
+import {
+  get,
+  ref,
+  remove,
+} from "firebase/database";
+
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import AuthModal from "../components/AuthModal";
 
-const Player = () => {
-  const { id } = useParams();
-  const navigate = useNavigate();
+function Library() {
   const { currentUser } = useAuth();
+  const location = useLocation();
 
-  const audioRef = useRef(null);
-
-  const [book, setBook] = useState(null);
-  const [finished, setFinished] = useState(false);
+  const [savedBooks, setSavedBooks] = useState([]);
+  const [finishedBooks, setFinishedBooks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [hasAccess, setHasAccess] = useState(false);
-  const [accessError, setAccessError] = useState("");
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  useEffect(() => {
-    const loadBook = async () => {
-      try {
-        setLoading(true);
-        setAccessError("");
-
-        if (!currentUser) {
-          setAccessError("You must be signed in to listen to this book.");
-          setHasAccess(false);
-          return;
-        }
-
-        const functions = getFunctions();
-        const getProtectedBook = httpsCallable(
-          functions,
-          "getProtectedBook"
-        );
-
-        const result = await getProtectedBook({
-          bookId: id,
-        });
-
-        const protectedBook = result.data;
-
-        setBook(protectedBook);
-        setHasAccess(true);
-
-        const finishedRef = ref(
-          database,
-          `users/${currentUser.uid}/library/${id}/finished`
-        );
-
-        const snapshot = await get(finishedRef);
-
-        if (snapshot.exists()) {
-          setFinished(snapshot.val());
-        }
-      } catch (error) {
-        console.error("Failed to load protected book:", error);
-
-        if (error.code === "functions/permission-denied") {
-          setAccessError(
-            "This book requires a Premium subscription."
-          );
-        } else if (error.code === "functions/unauthenticated") {
-          setAccessError(
-            "You must be signed in to listen to this book."
-          );
-        } else {
-          setAccessError("Unable to load this book.");
-        }
-
-        setHasAccess(false);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    loadBook();
-  }, [id, currentUser]);
-
-  useEffect(() => {
-    if (!hasAccess || !book || !audioRef.current) {
+  const fetchLibrary = useCallback(async () => {
+    if (!currentUser) {
+      setSavedBooks([]);
+      setFinishedBooks([]);
+      setLoading(false);
       return;
     }
 
-    const audio = audioRef.current;
+    setLoading(true);
 
-    const handleLoadedMetadata = () => {
-      setDuration(audio.duration);
-    };
+    try {
+      const libraryRef = ref(
+        database,
+        `users/${currentUser.uid}/library`
+      );
 
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
+      const snapshot = await get(libraryRef);
 
-    const handleEnded = async () => {
-      setIsPlaying(false);
-      setFinished(true);
-
-      if (!currentUser) {
+      if (!snapshot.exists()) {
+        setSavedBooks([]);
+        setFinishedBooks([]);
         return;
       }
 
-      try {
-        const finishedRef = ref(
-          database,
-          `users/${currentUser.uid}/library/${id}`
-        );
+      const libraryData = snapshot.val();
 
-        await update(finishedRef, {
-          finished: true,
-        });
-      } catch (error) {
-        console.error(
-          "Failed to update finished status:",
-          error
-        );
-      }
+      const books = Object.values(libraryData);
+
+      const sortedBooks = books.sort(
+        (a, b) =>
+          (b.savedAt || 0) -
+          (a.savedAt || 0)
+      );
+
+      setSavedBooks(
+        sortedBooks.filter(
+          (book) => !book.finished
+        )
+      );
+
+      setFinishedBooks(
+        sortedBooks.filter(
+          (book) => book.finished
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Failed to fetch library:",
+        error
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    fetchLibrary();
+  }, [location.key, fetchLibrary]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      fetchLibrary();
     };
 
-    audio.addEventListener(
-      "loadedmetadata",
-      handleLoadedMetadata
-    );
-
-    audio.addEventListener(
-      "timeupdate",
-      handleTimeUpdate
-    );
-
-    audio.addEventListener(
-      "ended",
-      handleEnded
+    window.addEventListener(
+      "focus",
+      handleWindowFocus
     );
 
     return () => {
-      audio.removeEventListener(
-        "loadedmetadata",
-        handleLoadedMetadata
-      );
-
-      audio.removeEventListener(
-        "timeupdate",
-        handleTimeUpdate
-      );
-
-      audio.removeEventListener(
-        "ended",
-        handleEnded
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus
       );
     };
-  }, [hasAccess, book, currentUser, id]);
+  }, [fetchLibrary]);
 
-  const handlePlayPause = () => {
-    if (!audioRef.current) {
+  const handleRemoveBook = async (bookId) => {
+    if (!currentUser) {
       return;
     }
 
-    if (isPlaying) {
-      audioRef.current.pause();
-      setIsPlaying(false);
-    } else {
-      audioRef.current.play();
-      setIsPlaying(true);
+    try {
+      const bookRef = ref(
+        database,
+        `users/${currentUser.uid}/library/${bookId}`
+      );
+
+      await remove(bookRef);
+
+      setSavedBooks((books) =>
+        books.filter(
+          (book) =>
+            String(book.id) !==
+            String(bookId)
+        )
+      );
+
+      setFinishedBooks((books) =>
+        books.filter(
+          (book) =>
+            String(book.id) !==
+            String(bookId)
+        )
+      );
+    } catch (error) {
+      console.error(
+        "Failed to remove book:",
+        error
+      );
     }
   };
 
-  const handleStop = () => {
-    if (!audioRef.current) {
-      return;
+  const getProgressPercentage = (book) => {
+    const progress = Number(book.progress);
+    const duration = Number(book.duration);
+
+    if (
+      !Number.isFinite(progress) ||
+      !Number.isFinite(duration) ||
+      duration <= 0 ||
+      progress <= 0
+    ) {
+      return 0;
     }
 
-    audioRef.current.pause();
-    audioRef.current.currentTime = 0;
-    setCurrentTime(0);
-    setIsPlaying(false);
-  };
-
-  const handleSeek = (event) => {
-    const newTime = Number(event.target.value);
-
-    if (!audioRef.current) {
-      return;
-    }
-
-    audioRef.current.currentTime = newTime;
-    setCurrentTime(newTime);
-  };
-
-  const skipTime = (seconds) => {
-    if (!audioRef.current) {
-      return;
-    }
-
-    audioRef.current.currentTime = Math.max(
-      0,
-      Math.min(
-        audioRef.current.currentTime + seconds,
-        duration
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        Math.round(
+          (progress / duration) * 100
+        )
       )
     );
   };
 
   const formatTime = (time) => {
-    if (!Number.isFinite(time)) {
+    const value = Number(time);
+
+    if (
+      !Number.isFinite(value) ||
+      value <= 0
+    ) {
       return "0:00";
     }
 
-    const minutes = Math.floor(time / 60);
-    const seconds = Math.floor(time % 60);
+    const minutes = Math.floor(
+      value / 60
+    );
+
+    const seconds = Math.floor(
+      value % 60
+    );
 
     return `${minutes}:${seconds
       .toString()
@@ -221,143 +181,345 @@ const Player = () => {
 
   if (loading) {
     return (
-      <div className="player">
-        <div className="player__container">
-          <div className="player__skeleton"></div>
+      <main className="library-page">
+        <div className="library-page__container">
+          <div className="library-page__header">
+            <div
+              className="skeleton"
+              style={{
+                width: "220px",
+                height: "40px",
+                marginBottom: "12px",
+              }}
+            />
+
+            <div
+              className="skeleton"
+              style={{
+                width: "420px",
+                maxWidth: "100%",
+                height: "20px",
+              }}
+            />
+          </div>
+
+          <section className="library-section">
+            <div
+              className="skeleton"
+              style={{
+                width: "150px",
+                height: "28px",
+                marginBottom: "22px",
+              }}
+            />
+
+            <div className="book-grid">
+              {[1, 2, 3, 4, 5].map(
+                (item) => (
+                  <div key={item}>
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "100%",
+                        aspectRatio:
+                          "2 / 3",
+                        marginBottom: "12px",
+                      }}
+                    />
+
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "80%",
+                        height: "16px",
+                        marginBottom: "8px",
+                      }}
+                    />
+
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "55%",
+                        height: "14px",
+                      }}
+                    />
+                  </div>
+                )
+              )}
+            </div>
+          </section>
         </div>
-      </div>
+      </main>
     );
   }
 
-  if (!hasAccess) {
+  if (!currentUser) {
     return (
-      <div className="player">
-        <div className="player__container">
-          <button
-            className="player__back"
-            onClick={() => navigate(`/book/${id}`)}
-          >
-            ← Back to Book
-          </button>
+      <main className="library-page">
+        <div className="library-page__container">
+          <div className="library-page__header">
+            <h1>My Library</h1>
 
-          <div className="player__locked">
-            <h2>
-              {accessError ===
-              "This book requires a Premium subscription."
-                ? "Premium Required"
-                : "Unable to Play Book"}
-            </h2>
+            <p>
+              Log in to save books and keep
+              track of your reading.
+            </p>
+          </div>
 
-            <p>{accessError}</p>
+          <div className="library-empty">
+            <div className="library-empty__icon">
+              ▣
+            </div>
 
-            {accessError ===
-              "This book requires a Premium subscription." && (
-              <button
-                className="player__upgrade"
-                onClick={() => navigate("/choose-plan")}
-              >
-                Upgrade to Premium
-              </button>
-            )}
+            <h3>
+              Log in to view your library
+            </h3>
+
+            <p>
+              Your saved and finished books
+              will appear here.
+            </p>
+
+            <button
+              type="button"
+              className="book-page__button"
+              onClick={() =>
+                setShowAuthModal(true)
+              }
+              style={{
+                marginTop: "20px",
+              }}
+            >
+              Log in
+            </button>
           </div>
         </div>
-      </div>
+
+        {showAuthModal && (
+          <AuthModal
+            onClose={() =>
+              setShowAuthModal(false)
+            }
+          />
+        )}
+      </main>
     );
   }
 
   return (
-    <div className="player">
-      <div className="player__container">
-        <button
-          className="player__back"
-          onClick={() => navigate(`/book/${id}`)}
-        >
-          ← Back to Book
-        </button>
+    <main className="library-page">
+      <div className="library-page__container">
+        <div className="library-page__header">
+          <h1>My Library</h1>
 
-        <div className="player__content">
-          <div className="player__image">
-            <img
-              src={book.imageLink}
-              alt={book.title}
-            />
-          </div>
-
-          <div className="player__info">
-            <h1>{book.title}</h1>
-
-            <p className="player__author">
-              {book.author}
-            </p>
-
-            {finished && (
-              <div className="player__finished">
-                Finished
-              </div>
-            )}
-
-            <p className="player__description">
-              {book.description}
-            </p>
-
-            <audio
-              ref={audioRef}
-              src={book.audioLink}
-              preload="metadata"
-            />
-
-            <div className="player__controls">
-              <button
-                onClick={() => skipTime(-15)}
-                className="player__skip"
-              >
-                -15
-              </button>
-
-              <button
-                onClick={handlePlayPause}
-                className="player__play"
-              >
-                {isPlaying ? "Pause" : "Play"}
-              </button>
-
-              <button
-                onClick={handleStop}
-                className="player__stop"
-              >
-                Stop
-              </button>
-
-              <button
-                onClick={() => skipTime(15)}
-                className="player__skip"
-              >
-                +15
-              </button>
-            </div>
-
-            <div className="player__progress">
-              <span>
-                {formatTime(currentTime)}
-              </span>
-
-              <input
-                type="range"
-                min="0"
-                max={duration || 0}
-                value={currentTime}
-                onChange={handleSeek}
-              />
-
-              <span>
-                {formatTime(duration)}
-              </span>
-            </div>
-          </div>
+          <p>
+            Your saved books and finished
+            books.
+          </p>
         </div>
-      </div>
-    </div>
-  );
-};
 
-export default Player;
+        <section className="library-section">
+          <div className="library-section__header">
+            <h2>Saved Books</h2>
+          </div>
+
+          {savedBooks.length > 0 ? (
+            <div className="book-grid">
+              {savedBooks.map((book) => {
+                const progressPercentage =
+                  getProgressPercentage(
+                    book
+                  );
+
+                const hasProgress =
+                  progressPercentage > 0;
+
+                return (
+                  <div
+                    className="book-card library-book-card"
+                    key={book.id}
+                  >
+                    <Link
+                      to={`/book/${book.id}`}
+                    >
+                      <div className="book-card__image-wrapper">
+                        {book.subscriptionRequired && (
+                          <span className="book-card__premium">
+                            Premium
+                          </span>
+                        )}
+
+                        <img
+                          src={book.imageLink}
+                          alt={book.title}
+                          className="book-card__image"
+                        />
+                      </div>
+
+                      <h3>
+                        {book.title}
+                      </h3>
+
+                      <p>
+                        {book.author}
+                      </p>
+                    </Link>
+
+                    <div className="library-book-card__progress">
+                      <div className="library-book-card__progress-header">
+                        <span>
+                          {hasProgress
+                            ? `${progressPercentage}% complete`
+                            : "Not started"}
+                        </span>
+
+                        {hasProgress && (
+                          <span>
+                            {formatTime(
+                              book.progress
+                            )}
+
+                            {book.duration
+                              ? ` / ${formatTime(
+                                  book.duration
+                                )}`
+                              : ""}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="library-book-card__progress-track">
+                        <div
+                          className="library-book-card__progress-bar"
+                          style={{
+                            width: `${progressPercentage}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    {hasProgress && (
+                      <Link
+                        to={`/player/${book.id}`}
+                        className="library-book-card__continue"
+                      >
+                        Continue listening
+                      </Link>
+                    )}
+
+                    <button
+                      type="button"
+                      className="library-book-card__remove"
+                      onClick={() =>
+                        handleRemoveBook(
+                          book.id
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <div className="library-empty__icon">
+                ▣
+              </div>
+
+              <h3>
+                Your library is empty
+              </h3>
+
+              <p>
+                Add books from the book
+                page and they'll appear
+                here.
+              </p>
+            </div>
+          )}
+        </section>
+
+        <section className="library-section">
+          <div className="library-section__header">
+            <h2>Finished Books</h2>
+          </div>
+
+          {finishedBooks.length > 0 ? (
+            <div className="book-grid">
+              {finishedBooks.map(
+                (book) => (
+                  <div
+                    className="book-card library-book-card"
+                    key={book.id}
+                  >
+                    <Link
+                      to={`/book/${book.id}`}
+                    >
+                      <div className="book-card__image-wrapper">
+                        {book.subscriptionRequired && (
+                          <span className="book-card__premium">
+                            Premium
+                          </span>
+                        )}
+
+                        <img
+                          src={book.imageLink}
+                          alt={book.title}
+                          className="book-card__image"
+                        />
+                      </div>
+
+                      <h3>
+                        {book.title}
+                      </h3>
+
+                      <p>
+                        {book.author}
+                      </p>
+                    </Link>
+
+                    <div className="library-book-card__finished">
+                      ✓ Finished
+                    </div>
+
+                    <button
+                      type="button"
+                      className="library-book-card__remove"
+                      onClick={() =>
+                        handleRemoveBook(
+                          book.id
+                        )
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <div className="library-empty__icon">
+                ✓
+              </div>
+
+              <h3>
+                No finished books yet
+              </h3>
+
+              <p>
+                Books you finish
+                listening to will appear
+                here.
+              </p>
+            </div>
+          )}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+export default Library;

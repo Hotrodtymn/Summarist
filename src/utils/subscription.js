@@ -6,11 +6,17 @@ export async function getSubscription(userId) {
     return {
       plan: "basic",
       status: "inactive",
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+      trialEnd: null,
     };
   }
 
   try {
-    const subscriptionRef = ref(database, `users/${userId}/subscription`);
+    const subscriptionRef = ref(
+      database,
+      `users/${userId}/subscription`
+    );
 
     const snapshot = await get(subscriptionRef);
 
@@ -18,6 +24,9 @@ export async function getSubscription(userId) {
       return {
         plan: "basic",
         status: "inactive",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
+        trialEnd: null,
       };
     }
 
@@ -26,13 +35,25 @@ export async function getSubscription(userId) {
     return {
       plan: subscription.plan || "basic",
       status: subscription.status || "inactive",
+      cancelAtPeriodEnd:
+        subscription.cancelAtPeriodEnd || false,
+      currentPeriodEnd:
+        subscription.currentPeriodEnd || null,
+      trialEnd:
+        subscription.trialEnd || null,
     };
   } catch (error) {
-    console.error("Failed to get subscription:", error);
+    console.error(
+      "Failed to get subscription:",
+      error
+    );
 
     return {
       plan: "basic",
       status: "inactive",
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+      trialEnd: null,
     };
   }
 }
@@ -48,6 +69,9 @@ export async function isPremiumUser(userId) {
 
   return (
     subscription.plan === "premium" &&
-    (subscription.status === "trialing" || subscription.status === "active")
+    (
+      subscription.status === "trialing" ||
+      subscription.status === "active"
+    )
   );
 }

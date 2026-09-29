@@ -11,14 +11,21 @@ function Settings() {
   const { currentUser } = useAuth();
 
   const [showAuthModal, setShowAuthModal] = useState(false);
+
   const [subscription, setSubscription] = useState({
     plan: "basic",
     status: "inactive",
+    cancelAtPeriodEnd: false,
+    currentPeriodEnd: null,
+    trialEnd: null,
   });
+
   const [loadingSubscription, setLoadingSubscription] =
     useState(true);
+
   const [isManagingSubscription, setIsManagingSubscription] =
     useState(false);
+
   const [subscriptionError, setSubscriptionError] =
     useState("");
 
@@ -27,8 +34,13 @@ function Settings() {
       setSubscription({
         plan: "basic",
         status: "inactive",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: null,
+        trialEnd: null,
       });
+
       setLoadingSubscription(false);
+
       return;
     }
 
@@ -40,7 +52,16 @@ function Settings() {
         currentUser.uid
       );
 
-      setSubscription(userSubscription);
+      setSubscription({
+        plan: userSubscription.plan || "basic",
+        status: userSubscription.status || "inactive",
+        cancelAtPeriodEnd:
+          userSubscription.cancelAtPeriodEnd || false,
+        currentPeriodEnd:
+          userSubscription.currentPeriodEnd || null,
+        trialEnd:
+          userSubscription.trialEnd || null,
+      });
     } catch (error) {
       console.error(
         "Failed to load subscription:",
@@ -84,6 +105,24 @@ function Settings() {
       subscription.status === "active"
     );
 
+  const formatSubscriptionDate = (timestamp) => {
+    if (!timestamp) {
+      return "";
+    }
+
+    const date = new Date(timestamp * 1000);
+
+    if (Number.isNaN(date.getTime())) {
+      return "";
+    }
+
+    return date.toLocaleDateString(undefined, {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
   const handleManageSubscription = async () => {
     if (!currentUser || !isPremium) {
       return;
@@ -100,7 +139,8 @@ function Settings() {
         "createCustomerPortalSession"
       );
 
-      const result = await createCustomerPortalSession();
+      const result =
+        await createCustomerPortalSession();
 
       const portalUrl = result.data?.url;
 
@@ -199,18 +239,52 @@ function Settings() {
                   {isPremium ? "Premium" : "Basic"}
                 </h3>
 
-                <p>
-                  {isPremium
-                    ? subscription.status === "trialing"
-                      ? "Your 7-day Premium trial is active."
-                      : "You have an active Premium subscription."
-                    : "You currently have a free Summarist account."}
-                </p>
+                {isPremium && subscription.cancelAtPeriodEnd ? (
+                  <>
+                    <p>
+                      Your Premium subscription is scheduled
+                      to end on{" "}
+                      <strong>
+                        {formatSubscriptionDate(
+                          subscription.currentPeriodEnd
+                        )}
+                      </strong>
+                      .
+                    </p>
 
-                {isPremium && (
-                  <p className="settings-card__status">
-                    Status: {subscription.status}
-                  </p>
+                    <p className="settings-card__status">
+                      Cancellation scheduled
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      {isPremium
+                        ? subscription.status === "trialing"
+                          ? "Your 7-day Premium trial is active."
+                          : "You have an active Premium subscription."
+                        : "You currently have a free Summarist account."}
+                    </p>
+
+                    {isPremium &&
+                      subscription.status === "trialing" &&
+                      subscription.trialEnd && (
+                        <p>
+                          Trial ends{" "}
+                          <strong>
+                            {formatSubscriptionDate(
+                              subscription.trialEnd
+                            )}
+                          </strong>
+                        </p>
+                      )}
+
+                    {isPremium && (
+                      <p className="settings-card__status">
+                        Status: {subscription.status}
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
 

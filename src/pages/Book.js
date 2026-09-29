@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   get,
   ref,
+  remove,
   set,
 } from "firebase/database";
 
@@ -18,10 +19,16 @@ function Book() {
 
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+
   const [isSaved, setIsSaved] = useState(false);
+  const [showAuthModal, setShowAuthModal] =
+    useState(false);
+
   const [isSaving, setIsSaving] = useState(false);
-  const [checkingSubscription, setCheckingSubscription] = useState(false);
+
+  const [toast, setToast] = useState("");
+  const [toastType, setToastType] =
+    useState("success");
 
   useEffect(() => {
     const fetchBook = async () => {
@@ -31,9 +38,13 @@ function Book() {
         );
 
         const data = await response.json();
+
         setBook(data);
       } catch (error) {
-        console.error("Failed to fetch book:", error);
+        console.error(
+          "Failed to fetch book:",
+          error
+        );
       } finally {
         setLoading(false);
       }
@@ -59,12 +70,27 @@ function Book() {
 
         setIsSaved(snapshot.exists());
       } catch (error) {
-        console.error("Failed to check library:", error);
+        console.error(
+          "Failed to check library:",
+          error
+        );
       }
     };
 
     checkLibrary();
   }, [currentUser, id]);
+
+  const showToast = (
+    message,
+    type = "success"
+  ) => {
+    setToastType(type);
+    setToast(message);
+
+    setTimeout(() => {
+      setToast("");
+    }, 3000);
+  };
 
   const handleProtectedAction = async () => {
     if (!currentUser) {
@@ -77,30 +103,20 @@ function Book() {
     }
 
     if (!book.subscriptionRequired) {
-      navigate(`/player/${id}`);
+      navigate(`/player/${book.id}`);
       return;
     }
 
-    setCheckingSubscription(true);
+    const premium = await isPremiumUser(
+      currentUser.uid
+    );
 
-    try {
-      const premium = await isPremiumUser(currentUser.uid);
-
-      if (premium) {
-        navigate(`/player/${id}`);
-      } else {
-        navigate("/choose-plan");
-      }
-    } catch (error) {
-      console.error(
-        "Failed to check subscription:",
-        error
-      );
-
-      navigate("/choose-plan");
-    } finally {
-      setCheckingSubscription(false);
+    if (premium) {
+      navigate(`/player/${book.id}`);
+      return;
     }
+
+    navigate("/choose-plan");
   };
 
   const handleAddToLibrary = async () => {
@@ -109,7 +125,7 @@ function Book() {
       return;
     }
 
-    if (!book || isSaving || isSaved) {
+    if (!book || isSaving) {
       return;
     }
 
@@ -135,10 +151,54 @@ function Book() {
       });
 
       setIsSaved(true);
+
+      showToast(
+        `"${book.title}" was added to your library.`
+      );
     } catch (error) {
       console.error(
         "Failed to add book to library:",
         error
+      );
+
+      showToast(
+        "Failed to add the book to your library.",
+        "error"
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleRemoveFromLibrary = async () => {
+    if (!currentUser || !book || isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+
+    try {
+      const libraryRef = ref(
+        database,
+        `users/${currentUser.uid}/library/${book.id}`
+      );
+
+      await remove(libraryRef);
+
+      setIsSaved(false);
+
+      showToast(
+        `"${book.title}" was removed from your library.`
+      );
+    } catch (error) {
+      console.error(
+        "Failed to remove book from library:",
+        error
+      );
+
+      showToast(
+        "Failed to remove the book from your library.",
+        "error"
       );
     } finally {
       setIsSaving(false);
@@ -149,43 +209,7 @@ function Book() {
     return (
       <main className="book-page">
         <div className="book-page__container">
-          <div className="book-page__content">
-            <div
-              className="skeleton"
-              style={{
-                width: "260px",
-                height: "390px",
-              }}
-            />
-
-            <div style={{ flex: 1 }}>
-              <div
-                className="skeleton"
-                style={{
-                  width: "70%",
-                  height: "40px",
-                  marginBottom: "20px",
-                }}
-              />
-
-              <div
-                className="skeleton"
-                style={{
-                  width: "40%",
-                  height: "20px",
-                  marginBottom: "25px",
-                }}
-              />
-
-              <div
-                className="skeleton"
-                style={{
-                  width: "100%",
-                  height: "120px",
-                }}
-              />
-            </div>
-          </div>
+          <div className="skeleton skeleton__selected"></div>
         </div>
       </main>
     );
@@ -195,8 +219,24 @@ function Book() {
     return (
       <main className="book-page">
         <div className="book-page__container">
-          <h1>Book not found</h1>
-          <Link to="/for-you">Back to For You</Link>
+          <div className="library__empty">
+            <h1>Book Not Found</h1>
+
+            <p>
+              We couldn't find the book you're
+              looking for.
+            </p>
+
+            <button
+              type="button"
+              className="book-page__button"
+              onClick={() =>
+                navigate("/for-you")
+              }
+            >
+              Back to Books
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -205,72 +245,105 @@ function Book() {
   return (
     <main className="book-page">
       <div className="book-page__container">
-        <Link to="/for-you" className="book-page__back">
-          ← Back to For You
-        </Link>
+        <div className="book-page__image-wrapper">
+          {book.subscriptionRequired && (
+            <span className="book-card__premium">
+              Premium
+            </span>
+          )}
 
-        <div className="book-page__content">
           <img
             src={book.imageLink}
             alt={book.title}
             className="book-page__image"
           />
+        </div>
 
-          <div className="book-page__info">
-            {book.subscriptionRequired && (
-              <div className="book-page__premium-badge">
-                🔒 Premium
-              </div>
-            )}
+        <div className="book-page__content">
+          <h1>{book.title}</h1>
 
-            <h1>{book.title}</h1>
+          <h2>{book.author}</h2>
 
-            <p className="book-page__author">
-              {book.author}
-            </p>
+          <p className="book-page__subtitle">
+            {book.subTitle}
+          </p>
 
-            <p className="book-page__subtitle">
-              {book.subTitle}
-            </p>
+          <p className="book-page__description">
+            {book.description}
+          </p>
 
-            <p className="book-page__description">
-              {book.description}
-            </p>
+          <div className="book-page__actions">
+            <button
+              type="button"
+              className="book-page__button"
+              onClick={handleProtectedAction}
+            >
+              {book.subscriptionRequired
+                ? "Listen with Premium"
+                : "Listen"}
+            </button>
 
-            <div className="book-page__actions">
-              <button
-                type="button"
-                className="book-page__button"
-                onClick={handleProtectedAction}
-                disabled={checkingSubscription}
-              >
-                {checkingSubscription
-                  ? "Checking..."
-                  : book.subscriptionRequired
-                    ? "Listen with Premium"
-                    : "Listen"}
-              </button>
-
+            {isSaved ? (
               <button
                 type="button"
                 className="book-page__button book-page__button--secondary"
-                onClick={handleAddToLibrary}
-                disabled={isSaving || isSaved}
+                onClick={
+                  handleRemoveFromLibrary
+                }
+                disabled={isSaving}
+              >
+                {isSaving
+                  ? "Removing..."
+                  : "Remove from Library"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="book-page__button book-page__button--secondary"
+                onClick={
+                  handleAddToLibrary
+                }
+                disabled={isSaving}
               >
                 {isSaving
                   ? "Adding..."
-                  : isSaved
-                    ? "Added to Library"
-                    : "Add to Library"}
+                  : "Add to Library"}
               </button>
-            </div>
+            )}
           </div>
         </div>
       </div>
 
+      {toast && (
+        <div
+          className={`library-toast library-toast--${toastType}`}
+          role="status"
+          aria-live="polite"
+        >
+          <span className="library-toast__icon">
+            {toastType === "error"
+              ? "!"
+              : "✓"}
+          </span>
+
+          <span>{toast}</span>
+
+          <button
+            type="button"
+            className="library-toast__close"
+            onClick={() => setToast("")}
+            aria-label="Close notification"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {showAuthModal && (
         <AuthModal
-          onClose={() => setShowAuthModal(false)}
+          onClose={() =>
+            setShowAuthModal(false)
+          }
         />
       )}
     </main>
