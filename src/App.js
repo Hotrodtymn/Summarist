@@ -1,6 +1,10 @@
-
 import "./App.css";
-import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
+import {
+  BrowserRouter as Router,
+  Routes,
+  Route,
+  Link,
+} from "react-router-dom";
 
 import Home from "./pages/Home";
 import ForYou from "./pages/ForYou";
@@ -9,6 +13,7 @@ import Player from "./pages/Player";
 import Library from "./pages/Library";
 import Settings from "./pages/Settings";
 import ChoosePlan from "./pages/ChoosePlan.js";
+import Search from "./pages/Search";
 
 import Sidebar from "./components/Sidebar";
 
@@ -81,6 +86,19 @@ function App() {
 
                 <main className="app-content">
                   <ForYou />
+                </main>
+              </div>
+            }
+          />
+
+          <Route
+            path="/search"
+            element={
+              <div className="app-layout">
+                <Sidebar />
+
+                <main className="app-content">
+                  <Search />
                 </main>
               </div>
             }

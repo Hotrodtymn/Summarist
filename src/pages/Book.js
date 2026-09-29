@@ -1,11 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import {
-  get,
-  ref,
-  remove,
-  set,
-} from "firebase/database";
+import { get, ref, remove, set } from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -21,30 +16,25 @@ function Book() {
   const [loading, setLoading] = useState(true);
 
   const [isSaved, setIsSaved] = useState(false);
-  const [showAuthModal, setShowAuthModal] =
-    useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
   const [isSaving, setIsSaving] = useState(false);
 
   const [toast, setToast] = useState("");
-  const [toastType, setToastType] =
-    useState("success");
+  const [toastType, setToastType] = useState("success");
 
   useEffect(() => {
     const fetchBook = async () => {
       try {
         const response = await fetch(
-          `https://us-central1-summaristt.cloudfunctions.net/getBook?id=${id}`
+          `https://us-central1-summaristt.cloudfunctions.net/getBook?id=${id}`,
         );
 
         const data = await response.json();
 
         setBook(data);
       } catch (error) {
-        console.error(
-          "Failed to fetch book:",
-          error
-        );
+        console.error("Failed to fetch book:", error);
       } finally {
         setLoading(false);
       }
@@ -63,27 +53,21 @@ function Book() {
       try {
         const libraryRef = ref(
           database,
-          `users/${currentUser.uid}/library/${id}`
+          `users/${currentUser.uid}/library/${id}`,
         );
 
         const snapshot = await get(libraryRef);
 
         setIsSaved(snapshot.exists());
       } catch (error) {
-        console.error(
-          "Failed to check library:",
-          error
-        );
+        console.error("Failed to check library:", error);
       }
     };
 
     checkLibrary();
   }, [currentUser, id]);
 
-  const showToast = (
-    message,
-    type = "success"
-  ) => {
+  const showToast = (message, type = "success") => {
     setToastType(type);
     setToast(message);
 
@@ -107,9 +91,7 @@ function Book() {
       return;
     }
 
-    const premium = await isPremiumUser(
-      currentUser.uid
-    );
+    const premium = await isPremiumUser(currentUser.uid);
 
     if (premium) {
       navigate(`/player/${book.id}`);
@@ -134,7 +116,7 @@ function Book() {
     try {
       const libraryRef = ref(
         database,
-        `users/${currentUser.uid}/library/${book.id}`
+        `users/${currentUser.uid}/library/${book.id}`,
       );
 
       await set(libraryRef, {
@@ -144,27 +126,18 @@ function Book() {
         subTitle: book.subTitle || "",
         description: book.description || "",
         imageLink: book.imageLink || "",
-        subscriptionRequired:
-          book.subscriptionRequired || false,
+        subscriptionRequired: book.subscriptionRequired || false,
         finished: false,
         savedAt: Date.now(),
       });
 
       setIsSaved(true);
 
-      showToast(
-        `"${book.title}" was added to your library.`
-      );
+      showToast(`"${book.title}" was added to your library.`);
     } catch (error) {
-      console.error(
-        "Failed to add book to library:",
-        error
-      );
+      console.error("Failed to add book to library:", error);
 
-      showToast(
-        "Failed to add the book to your library.",
-        "error"
-      );
+      showToast("Failed to add the book to your library.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -180,26 +153,18 @@ function Book() {
     try {
       const libraryRef = ref(
         database,
-        `users/${currentUser.uid}/library/${book.id}`
+        `users/${currentUser.uid}/library/${book.id}`,
       );
 
       await remove(libraryRef);
 
       setIsSaved(false);
 
-      showToast(
-        `"${book.title}" was removed from your library.`
-      );
+      showToast(`"${book.title}" was removed from your library.`);
     } catch (error) {
-      console.error(
-        "Failed to remove book from library:",
-        error
-      );
+      console.error("Failed to remove book from library:", error);
 
-      showToast(
-        "Failed to remove the book from your library.",
-        "error"
-      );
+      showToast("Failed to remove the book from your library.", "error");
     } finally {
       setIsSaving(false);
     }
@@ -222,17 +187,12 @@ function Book() {
           <div className="library__empty">
             <h1>Book Not Found</h1>
 
-            <p>
-              We couldn't find the book you're
-              looking for.
-            </p>
+            <p>We couldn't find the book you're looking for.</p>
 
             <button
               type="button"
               className="book-page__button"
-              onClick={() =>
-                navigate("/for-you")
-              }
+              onClick={() => navigate("/for-you")}
             >
               Back to Books
             </button>
@@ -247,9 +207,7 @@ function Book() {
       <div className="book-page__container">
         <div className="book-page__image-wrapper">
           {book.subscriptionRequired && (
-            <span className="book-card__premium">
-              Premium
-            </span>
+            <span className="book-card__premium">Premium</span>
           )}
 
           <img
@@ -264,13 +222,9 @@ function Book() {
 
           <h2>{book.author}</h2>
 
-          <p className="book-page__subtitle">
-            {book.subTitle}
-          </p>
+          <p className="book-page__subtitle">{book.subTitle}</p>
 
-          <p className="book-page__description">
-            {book.description}
-          </p>
+          <p className="book-page__description">{book.description}</p>
 
           <div className="book-page__actions">
             <button
@@ -278,36 +232,26 @@ function Book() {
               className="book-page__button"
               onClick={handleProtectedAction}
             >
-              {book.subscriptionRequired
-                ? "Listen with Premium"
-                : "Listen"}
+              {book.subscriptionRequired ? "Listen with Premium" : "Listen"}
             </button>
 
             {isSaved ? (
               <button
                 type="button"
                 className="book-page__button book-page__button--secondary"
-                onClick={
-                  handleRemoveFromLibrary
-                }
+                onClick={handleRemoveFromLibrary}
                 disabled={isSaving}
               >
-                {isSaving
-                  ? "Removing..."
-                  : "Remove from Library"}
+                {isSaving ? "Removing..." : "Remove from Library"}
               </button>
             ) : (
               <button
                 type="button"
                 className="book-page__button book-page__button--secondary"
-                onClick={
-                  handleAddToLibrary
-                }
+                onClick={handleAddToLibrary}
                 disabled={isSaving}
               >
-                {isSaving
-                  ? "Adding..."
-                  : "Add to Library"}
+                {isSaving ? "Adding..." : "Add to Library"}
               </button>
             )}
           </div>
@@ -321,12 +265,20 @@ function Book() {
           aria-live="polite"
         >
           <span className="library-toast__icon">
-            {toastType === "error"
-              ? "!"
-              : "✓"}
+            {toastType === "error" ? "!" : "✓"}
           </span>
 
           <span>{toast}</span>
+
+          {toastType === "success" && (
+            <button
+              type="button"
+              className="library-toast__link"
+              onClick={() => navigate("/library")}
+            >
+              View Library
+            </button>
+          )}
 
           <button
             type="button"
@@ -339,13 +291,7 @@ function Book() {
         </div>
       )}
 
-      {showAuthModal && (
-        <AuthModal
-          onClose={() =>
-            setShowAuthModal(false)
-          }
-        />
-      )}
+      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
     </main>
   );
 }

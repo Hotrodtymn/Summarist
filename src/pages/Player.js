@@ -1,160 +1,484 @@
-import { useCallback, useEffect, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
+import { getFunctions, httpsCallable } from "firebase/functions";
 import {
   get,
   ref,
-  remove,
+  set,
 } from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
-import AuthModal from "../components/AuthModal";
 
-function Library() {
+function Player() {
+  const { id } = useParams();
+  const navigate = useNavigate();
   const { currentUser } = useAuth();
-  const location = useLocation();
 
-  const [savedBooks, setSavedBooks] = useState([]);
-  const [finishedBooks, setFinishedBooks] = useState([]);
+  const audioRef = useRef(null);
+  const progressSaveTimeoutRef = useRef(null);
+  const hasLoadedSavedProgressRef = useRef(false);
+
+  const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [error, setError] = useState("");
 
-  const fetchLibrary = useCallback(async () => {
-    if (!currentUser) {
-      setSavedBooks([]);
-      setFinishedBooks([]);
-      setLoading(false);
-      return;
-    }
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
 
-    setLoading(true);
+  const [savedProgress, setSavedProgress] = useState(0);
+  const [isFinished, setIsFinished] = useState(false);
 
-    try {
-      const libraryRef = ref(
-        database,
-        `users/${currentUser.uid}/library`
-      );
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const [isSavingProgress, setIsSavingProgress] =
+    useState(false);
 
-      const snapshot = await get(libraryRef);
+  useEffect(() => {
+    hasLoadedSavedProgressRef.current = false;
+    setSavedProgress(0);
+    setCurrentTime(0);
+    setDuration(0);
+    setIsFinished(false);
+  }, [id]);
 
-      if (!snapshot.exists()) {
-        setSavedBooks([]);
-        setFinishedBooks([]);
+  useEffect(() => {
+    const fetchBook = async () => {
+      if (!id) {
+        setError("Book not found.");
+        setLoading(false);
         return;
       }
 
-      const libraryData = snapshot.val();
+      setLoading(true);
+      setError("");
 
-      const books = Object.values(libraryData);
+      try {
+        const functions = getFunctions();
 
-      const sortedBooks = books.sort(
-        (a, b) =>
-          (b.savedAt || 0) -
-          (a.savedAt || 0)
+        const getProtectedBook =
+          httpsCallable(
+            functions,
+            "getProtectedBook"
+          );
+
+        const result = await getProtectedBook({
+          bookId: id,
+        });
+
+        const protectedBook =
+          result.data?.book || result.data;
+
+        if (!protectedBook) {
+          throw new Error(
+            "Book information was not returned."
+          );
+        }
+
+        setBook(protectedBook);
+      } catch (error) {
+        console.error(
+          "Failed to load protected book:",
+          error
+        );
+
+        setError(
+          error?.message ||
+            "Unable to load this book."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchBook();
+  }, [id]);
+
+  useEffect(() => {
+    const loadSavedProgress = async () => {
+      if (!currentUser || !id) {
+        hasLoadedSavedProgressRef.current = true;
+        return;
+      }
+
+      try {
+        const bookRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${id}`
+        );
+
+        const snapshot = await get(bookRef);
+
+        if (!snapshot.exists()) {
+          hasLoadedSavedProgressRef.current = true;
+          return;
+        }
+
+        const libraryBook = snapshot.val();
+
+        const progress = Number(
+          libraryBook.progress
+        );
+
+        const savedDuration = Number(
+          libraryBook.duration
+        );
+
+        if (
+          Number.isFinite(progress) &&
+          progress > 0
+        ) {
+          setSavedProgress(progress);
+        }
+
+        if (
+          Number.isFinite(savedDuration) &&
+          savedDuration > 0
+        ) {
+          setDuration(savedDuration);
+        }
+
+        setIsFinished(
+          libraryBook.finished === true
+        );
+      } catch (error) {
+        console.error(
+          "Failed to load saved progress:",
+          error
+        );
+      } finally {
+        hasLoadedSavedProgressRef.current = true;
+      }
+    };
+
+    loadSavedProgress();
+  }, [currentUser, id]);
+
+  useEffect(() => {
+    return () => {
+      if (
+        progressSaveTimeoutRef.current
+      ) {
+        clearTimeout(
+          progressSaveTimeoutRef.current
+        );
+      }
+    };
+  }, []);
+
+  const saveProgress = async (
+    progressValue,
+    finished = false
+  ) => {
+    if (!currentUser || !id) {
+      return;
+    }
+
+    const progress = Number(
+      progressValue
+    );
+
+    const audioDuration = Number(
+      duration || audioRef.current?.duration
+    );
+
+    if (
+      !Number.isFinite(progress) ||
+      progress < 0
+    ) {
+      return;
+    }
+
+    try {
+      setIsSavingProgress(true);
+
+      const bookRef = ref(
+        database,
+        `users/${currentUser.uid}/library/${id}`
       );
 
-      setSavedBooks(
-        sortedBooks.filter(
-          (book) => !book.finished
-        )
-      );
+      const snapshot = await get(bookRef);
 
-      setFinishedBooks(
-        sortedBooks.filter(
-          (book) => book.finished
-        )
-      );
+      if (!snapshot.exists()) {
+        return;
+      }
+
+      const libraryBook = snapshot.val();
+
+      await set(bookRef, {
+        ...libraryBook,
+        progress,
+        duration:
+          Number.isFinite(audioDuration) &&
+          audioDuration > 0
+            ? audioDuration
+            : libraryBook.duration ||
+              null,
+        finished,
+        ...(finished
+          ? {
+              finishedAt: Date.now(),
+            }
+          : {}),
+        lastPlayedAt: Date.now(),
+      });
     } catch (error) {
       console.error(
-        "Failed to fetch library:",
+        "Failed to save playback progress:",
         error
       );
     } finally {
-      setLoading(false);
+      setIsSavingProgress(false);
     }
-  }, [currentUser]);
+  };
+
+  const scheduleProgressSave = (
+    progressValue
+  ) => {
+    if (
+      progressSaveTimeoutRef.current
+    ) {
+      clearTimeout(
+        progressSaveTimeoutRef.current
+      );
+    }
+
+    progressSaveTimeoutRef.current =
+      setTimeout(() => {
+        saveProgress(progressValue);
+      }, 1000);
+  };
+
+  const handleLoadedMetadata = () => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const audioDuration = audio.duration;
+
+    if (
+      Number.isFinite(audioDuration) &&
+      audioDuration > 0
+    ) {
+      setDuration(audioDuration);
+
+      if (
+        currentUser &&
+        id &&
+        hasLoadedSavedProgressRef.current
+      ) {
+        const resumePosition =
+          Number(savedProgress);
+
+        if (
+          resumePosition > 0 &&
+          resumePosition < audioDuration &&
+          !isFinished
+        ) {
+          audio.currentTime =
+            resumePosition;
+
+          setCurrentTime(
+            resumePosition
+          );
+        }
+      }
+    }
+  };
+
+  const handleTimeUpdate = () => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const time = audio.currentTime;
+
+    setCurrentTime(time);
+
+    if (
+      currentUser &&
+      !isFinished
+    ) {
+      scheduleProgressSave(time);
+    }
+  };
+
+  const handlePlay = async () => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    try {
+      await audio.play();
+      setIsPlaying(true);
+    } catch (error) {
+      console.error(
+        "Unable to play audio:",
+        error
+      );
+    }
+  };
+
+  const handlePause = async () => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    audio.pause();
+    setIsPlaying(false);
+
+    await saveProgress(
+      audio.currentTime
+    );
+  };
+
+  const handleTogglePlay = () => {
+    if (isPlaying) {
+      handlePause();
+    } else {
+      handlePlay();
+    }
+  };
+
+  const handleStop = async () => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    await saveProgress(
+      audio.currentTime
+    );
+
+    audio.pause();
+    audio.currentTime = 0;
+
+    setCurrentTime(0);
+    setIsPlaying(false);
+  };
+
+  const handleSkip = (seconds) => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const newTime = Math.min(
+      Math.max(
+        audio.currentTime + seconds,
+        0
+      ),
+      audio.duration || 0
+    );
+
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
+
+    scheduleProgressSave(newTime);
+  };
+
+  const handleSeek = (event) => {
+    const audio = audioRef.current;
+
+    if (!audio) {
+      return;
+    }
+
+    const newTime = Number(
+      event.target.value
+    );
+
+    if (!Number.isFinite(newTime)) {
+      return;
+    }
+
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
+
+    scheduleProgressSave(newTime);
+  };
+
+  const handlePlaybackRateChange = (
+    event
+  ) => {
+    const newRate = Number(
+      event.target.value
+    );
+
+    const audio = audioRef.current;
+
+    if (
+      !audio ||
+      !Number.isFinite(newRate)
+    ) {
+      return;
+    }
+
+    audio.playbackRate = newRate;
+    setPlaybackRate(newRate);
+  };
+
+  const handleEnded = async () => {
+    const audio = audioRef.current;
+
+    setIsPlaying(false);
+    setCurrentTime(
+      audio?.duration || duration
+    );
+    setIsFinished(true);
+
+    await saveProgress(
+      audio?.duration || duration,
+      true
+    );
+  };
+
+  const handleBeforeUnload = () => {
+    const audio = audioRef.current;
+
+    if (
+      !audio ||
+      !currentUser ||
+      !id
+    ) {
+      return;
+    }
+
+    const progress = audio.currentTime;
+
+    if (
+      !Number.isFinite(progress) ||
+      progress <= 0
+    ) {
+      return;
+    }
+
+    saveProgress(progress);
+  };
 
   useEffect(() => {
-    fetchLibrary();
-  }, [location.key, fetchLibrary]);
-
-  useEffect(() => {
-    const handleWindowFocus = () => {
-      fetchLibrary();
-    };
-
     window.addEventListener(
-      "focus",
-      handleWindowFocus
+      "beforeunload",
+      handleBeforeUnload
     );
 
     return () => {
       window.removeEventListener(
-        "focus",
-        handleWindowFocus
+        "beforeunload",
+        handleBeforeUnload
       );
     };
-  }, [fetchLibrary]);
-
-  const handleRemoveBook = async (bookId) => {
-    if (!currentUser) {
-      return;
-    }
-
-    try {
-      const bookRef = ref(
-        database,
-        `users/${currentUser.uid}/library/${bookId}`
-      );
-
-      await remove(bookRef);
-
-      setSavedBooks((books) =>
-        books.filter(
-          (book) =>
-            String(book.id) !==
-            String(bookId)
-        )
-      );
-
-      setFinishedBooks((books) =>
-        books.filter(
-          (book) =>
-            String(book.id) !==
-            String(bookId)
-        )
-      );
-    } catch (error) {
-      console.error(
-        "Failed to remove book:",
-        error
-      );
-    }
-  };
-
-  const getProgressPercentage = (book) => {
-    const progress = Number(book.progress);
-    const duration = Number(book.duration);
-
-    if (
-      !Number.isFinite(progress) ||
-      !Number.isFinite(duration) ||
-      duration <= 0 ||
-      progress <= 0
-    ) {
-      return 0;
-    }
-
-    return Math.min(
-      100,
-      Math.max(
-        0,
-        Math.round(
-          (progress / duration) * 100
-        )
-      )
-    );
-  };
+  });
 
   const formatTime = (time) => {
     const value = Number(time);
@@ -166,360 +490,313 @@ function Library() {
       return "0:00";
     }
 
+    const hours = Math.floor(
+      value / 3600
+    );
+
     const minutes = Math.floor(
-      value / 60
+      (value % 3600) / 60
     );
 
     const seconds = Math.floor(
       value % 60
     );
 
+    if (hours > 0) {
+      return `${hours}:${minutes
+        .toString()
+        .padStart(2, "0")}:${seconds
+        .toString()
+        .padStart(2, "0")}`;
+    }
+
     return `${minutes}:${seconds
       .toString()
       .padStart(2, "0")}`;
   };
 
+  const handleBack = async () => {
+    const audio = audioRef.current;
+
+    if (
+      audio &&
+      currentUser &&
+      !isFinished
+    ) {
+      await saveProgress(
+        audio.currentTime
+      );
+    }
+
+    if (id) {
+      navigate(`/book/${id}`);
+      return;
+    }
+
+    navigate(-1);
+  };
+
   if (loading) {
     return (
-      <main className="library-page">
-        <div className="library-page__container">
-          <div className="library-page__header">
-            <div
-              className="skeleton"
-              style={{
-                width: "220px",
-                height: "40px",
-                marginBottom: "12px",
-              }}
-            />
-
-            <div
-              className="skeleton"
-              style={{
-                width: "420px",
-                maxWidth: "100%",
-                height: "20px",
-              }}
-            />
+      <main className="player">
+        <div className="player__container">
+          <div className="player__loading">
+            Loading book...
           </div>
-
-          <section className="library-section">
-            <div
-              className="skeleton"
-              style={{
-                width: "150px",
-                height: "28px",
-                marginBottom: "22px",
-              }}
-            />
-
-            <div className="book-grid">
-              {[1, 2, 3, 4, 5].map(
-                (item) => (
-                  <div key={item}>
-                    <div
-                      className="skeleton"
-                      style={{
-                        width: "100%",
-                        aspectRatio:
-                          "2 / 3",
-                        marginBottom: "12px",
-                      }}
-                    />
-
-                    <div
-                      className="skeleton"
-                      style={{
-                        width: "80%",
-                        height: "16px",
-                        marginBottom: "8px",
-                      }}
-                    />
-
-                    <div
-                      className="skeleton"
-                      style={{
-                        width: "55%",
-                        height: "14px",
-                      }}
-                    />
-                  </div>
-                )
-              )}
-            </div>
-          </section>
         </div>
       </main>
     );
   }
 
-  if (!currentUser) {
+  if (error || !book) {
     return (
-      <main className="library-page">
-        <div className="library-page__container">
-          <div className="library-page__header">
-            <h1>My Library</h1>
+      <main className="player">
+        <div className="player__container">
+          <button
+            type="button"
+            className="player__back"
+            onClick={() =>
+              navigate(
+                id
+                  ? `/book/${id}`
+                  : "/library"
+              )
+            }
+          >
+            ← Back to Book
+          </button>
+
+          <div className="player__error">
+            <h1>
+              Unable to load this book
+            </h1>
 
             <p>
-              Log in to save books and keep
-              track of your reading.
+              {error ||
+                "The book could not be loaded."}
             </p>
-          </div>
-
-          <div className="library-empty">
-            <div className="library-empty__icon">
-              ▣
-            </div>
-
-            <h3>
-              Log in to view your library
-            </h3>
-
-            <p>
-              Your saved and finished books
-              will appear here.
-            </p>
-
-            <button
-              type="button"
-              className="book-page__button"
-              onClick={() =>
-                setShowAuthModal(true)
-              }
-              style={{
-                marginTop: "20px",
-              }}
-            >
-              Log in
-            </button>
           </div>
         </div>
-
-        {showAuthModal && (
-          <AuthModal
-            onClose={() =>
-              setShowAuthModal(false)
-            }
-          />
-        )}
       </main>
     );
   }
+
+  const audioUrl =
+    book.audioLink ||
+    book.audioUrl ||
+    book.audio;
 
   return (
-    <main className="library-page">
-      <div className="library-page__container">
-        <div className="library-page__header">
-          <h1>My Library</h1>
+    <main className="player">
+      <div className="player__container">
+        <button
+          type="button"
+          className="player__back"
+          onClick={handleBack}
+        >
+          ← Back to Book
+        </button>
 
-          <p>
-            Your saved books and finished
-            books.
-          </p>
-        </div>
+        <div className="player__content">
+          <div className="player__book">
+            {book.imageLink && (
+              <img
+                src={book.imageLink}
+                alt={book.title}
+                className="player__image"
+              />
+            )}
 
-        <section className="library-section">
-          <div className="library-section__header">
-            <h2>Saved Books</h2>
-          </div>
+            <div className="player__info">
+              <h1>{book.title}</h1>
 
-          {savedBooks.length > 0 ? (
-            <div className="book-grid">
-              {savedBooks.map((book) => {
-                const progressPercentage =
-                  getProgressPercentage(
-                    book
-                  );
+              {book.author && (
+                <p className="player__author">
+                  {book.author}
+                </p>
+              )}
 
-                const hasProgress =
-                  progressPercentage > 0;
+              {book.subTitle && (
+                <p className="player__subtitle">
+                  {book.subTitle}
+                </p>
+              )}
 
-                return (
-                  <div
-                    className="book-card library-book-card"
-                    key={book.id}
-                  >
-                    <Link
-                      to={`/book/${book.id}`}
-                    >
-                      <div className="book-card__image-wrapper">
-                        {book.subscriptionRequired && (
-                          <span className="book-card__premium">
-                            Premium
-                          </span>
-                        )}
+              {book.description && (
+                <div className="player__description">
+                  <h2>Summary</h2>
 
-                        <img
-                          src={book.imageLink}
-                          alt={book.title}
-                          className="book-card__image"
-                        />
-                      </div>
-
-                      <h3>
-                        {book.title}
-                      </h3>
-
-                      <p>
-                        {book.author}
-                      </p>
-                    </Link>
-
-                    <div className="library-book-card__progress">
-                      <div className="library-book-card__progress-header">
-                        <span>
-                          {hasProgress
-                            ? `${progressPercentage}% complete`
-                            : "Not started"}
-                        </span>
-
-                        {hasProgress && (
-                          <span>
-                            {formatTime(
-                              book.progress
-                            )}
-
-                            {book.duration
-                              ? ` / ${formatTime(
-                                  book.duration
-                                )}`
-                              : ""}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="library-book-card__progress-track">
-                        <div
-                          className="library-book-card__progress-bar"
-                          style={{
-                            width: `${progressPercentage}%`,
-                          }}
-                        />
-                      </div>
-                    </div>
-
-                    {hasProgress && (
-                      <Link
-                        to={`/player/${book.id}`}
-                        className="library-book-card__continue"
-                      >
-                        Continue listening
-                      </Link>
-                    )}
-
-                    <button
-                      type="button"
-                      className="library-book-card__remove"
-                      onClick={() =>
-                        handleRemoveBook(
-                          book.id
-                        )
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-          ) : (
-            <div className="library-empty">
-              <div className="library-empty__icon">
-                ▣
-              </div>
-
-              <h3>
-                Your library is empty
-              </h3>
-
-              <p>
-                Add books from the book
-                page and they'll appear
-                here.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className="library-section">
-          <div className="library-section__header">
-            <h2>Finished Books</h2>
-          </div>
-
-          {finishedBooks.length > 0 ? (
-            <div className="book-grid">
-              {finishedBooks.map(
-                (book) => (
-                  <div
-                    className="book-card library-book-card"
-                    key={book.id}
-                  >
-                    <Link
-                      to={`/book/${book.id}`}
-                    >
-                      <div className="book-card__image-wrapper">
-                        {book.subscriptionRequired && (
-                          <span className="book-card__premium">
-                            Premium
-                          </span>
-                        )}
-
-                        <img
-                          src={book.imageLink}
-                          alt={book.title}
-                          className="book-card__image"
-                        />
-                      </div>
-
-                      <h3>
-                        {book.title}
-                      </h3>
-
-                      <p>
-                        {book.author}
-                      </p>
-                    </Link>
-
-                    <div className="library-book-card__finished">
-                      ✓ Finished
-                    </div>
-
-                    <button
-                      type="button"
-                      className="library-book-card__remove"
-                      onClick={() =>
-                        handleRemoveBook(
-                          book.id
-                        )
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                )
+                  <p>
+                    {book.description}
+                  </p>
+                </div>
               )}
             </div>
-          ) : (
-            <div className="library-empty">
-              <div className="library-empty__icon">
-                ✓
-              </div>
+          </div>
 
-              <h3>
-                No finished books yet
-              </h3>
-
-              <p>
-                Books you finish
-                listening to will appear
-                here.
+          <section
+            className="player__controls"
+            aria-label="Audio player controls"
+          >
+            {audioUrl ? (
+              <audio
+                ref={audioRef}
+                src={audioUrl}
+                onLoadedMetadata={
+                  handleLoadedMetadata
+                }
+                onTimeUpdate={
+                  handleTimeUpdate
+                }
+                onEnded={handleEnded}
+                preload="metadata"
+              />
+            ) : (
+              <p className="player__error">
+                Audio is not available for
+                this book.
               </p>
+            )}
+
+            <div className="player__progress">
+              <input
+                type="range"
+                min="0"
+                max={duration || 0}
+                step="0.1"
+                value={Math.min(
+                  currentTime,
+                  duration || 0
+                )}
+                onChange={handleSeek}
+                disabled={!audioUrl}
+                aria-label="Audio progress"
+              />
+
+              <div className="player__time">
+                <span>
+                  {formatTime(currentTime)}
+                </span>
+
+                <span>
+                  {formatTime(duration)}
+                </span>
+              </div>
             </div>
-          )}
-        </section>
+
+            <div className="player__buttons">
+              <button
+                type="button"
+                onClick={() =>
+                  handleSkip(-15)
+                }
+                disabled={!audioUrl}
+                aria-label="Skip backward 15 seconds"
+              >
+                −15
+              </button>
+
+              <button
+                type="button"
+                className="player__play"
+                onClick={handleTogglePlay}
+                disabled={!audioUrl}
+                aria-label={
+                  isPlaying
+                    ? "Pause"
+                    : "Play"
+                }
+              >
+                {isPlaying
+                  ? "Pause"
+                  : "Play"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  handleSkip(15)
+                }
+                disabled={!audioUrl}
+                aria-label="Skip forward 15 seconds"
+              >
+                +15
+              </button>
+
+              <button
+                type="button"
+                onClick={handleStop}
+                disabled={!audioUrl}
+              >
+                Stop
+              </button>
+            </div>
+
+            <div className="player__speed">
+              <label htmlFor="playback-speed">
+                Playback speed
+              </label>
+
+              <select
+                id="playback-speed"
+                value={playbackRate}
+                onChange={
+                  handlePlaybackRateChange
+                }
+                disabled={!audioUrl}
+              >
+                <option value="0.75">
+                  0.75x
+                </option>
+
+                <option value="1">
+                  1x
+                </option>
+
+                <option value="1.25">
+                  1.25x
+                </option>
+
+                <option value="1.5">
+                  1.5x
+                </option>
+
+                <option value="1.75">
+                  1.75x
+                </option>
+
+                <option value="2">
+                  2x
+                </option>
+              </select>
+            </div>
+
+            {isSavingProgress && (
+              <div className="player__saving">
+                Saving progress...
+              </div>
+            )}
+
+            {savedProgress > 0 &&
+              currentTime === 0 &&
+              !isFinished && (
+                <div className="player__resume">
+                  Your previous position will
+                  be restored when the audio
+                  loads.
+                </div>
+              )}
+
+            {isFinished && (
+              <div className="player__finished">
+                ✓ Finished
+              </div>
+            )}
+          </section>
+        </div>
       </div>
     </main>
   );
 }
 
-export default Library;
+export default Player;

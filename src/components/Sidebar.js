@@ -27,11 +27,18 @@ function Sidebar() {
         return;
       }
 
-      const userSubscription = await getSubscription(
-        currentUser.uid
-      );
+      try {
+        const userSubscription = await getSubscription(
+          currentUser.uid
+        );
 
-      setSubscription(userSubscription);
+        setSubscription(userSubscription);
+      } catch (error) {
+        console.error(
+          "Failed to load subscription:",
+          error
+        );
+      }
     };
 
     loadSubscription();
@@ -94,14 +101,17 @@ function Sidebar() {
           <span>Highlights</span>
         </button>
 
-        <button
-          type="button"
-          className="sidebar__link sidebar__link--disabled"
-          disabled
+        <Link
+          to="/search"
+          className={`sidebar__link ${
+            location.pathname === "/search"
+              ? "sidebar__link--active"
+              : ""
+          }`}
         >
           <span className="sidebar__icon">⌕</span>
           <span>Search</span>
-        </button>
+        </Link>
 
         <Link
           to="/settings"
@@ -136,7 +146,9 @@ function Sidebar() {
             </span>
 
             <span className="sidebar__subscription-action">
-              {isPremium ? "Manage plan" : "Upgrade"}
+              {isPremium
+                ? "Manage plan"
+                : "Upgrade"}
             </span>
           </Link>
         )}

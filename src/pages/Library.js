@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
 import {
-  get,
-  ref,
-  remove,
-} from "firebase/database";
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { get, ref, remove } from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
@@ -16,31 +18,29 @@ function Library() {
   const navigate = useNavigate();
 
   const [savedBooks, setSavedBooks] = useState([]);
-  const [finishedBooks, setFinishedBooks] =
-    useState([]);
+  const [finishedBooks, setFinishedBooks] = useState([]);
 
   const [loading, setLoading] = useState(true);
 
   const [filter, setFilter] = useState("all");
-  const [searchTerm, setSearchTerm] =
-    useState("");
-  const [sortBy, setSortBy] =
-    useState("newest");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [sortBy, setSortBy] = useState("newest");
 
-  const [showAuthModal, setShowAuthModal] =
-    useState(false);
+  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [bookToRemove, setBookToRemove] =
-    useState(null);
-  const [isRemoving, setIsRemoving] =
-    useState(false);
+  const [bookToRemove, setBookToRemove] = useState(null);
+  const [isRemoving, setIsRemoving] = useState(false);
 
   const [toast, setToast] = useState("");
-  const [toastType, setToastType] =
-    useState("success");
+  const [toastType, setToastType] = useState("success");
 
-  useEffect(() => {
-    const fetchLibrary = async () => {
+  const cancelButtonRef = useRef(null);
+  const modalRef = useRef(null);
+  const previousFocusedElementRef = useRef(null);
+  const toastTimeoutRef = useRef(null);
+
+  const loadLibrary = useCallback(
+    async (showLoading = false) => {
       if (!currentUser) {
         setSavedBooks([]);
         setFinishedBooks([]);
@@ -48,10 +48,14 @@ function Library() {
         return;
       }
 
+      if (showLoading) {
+        setLoading(true);
+      }
+
       try {
         const libraryRef = ref(
           database,
-          `users/${currentUser.uid}/library`
+          `users/${currentUser.uid}/library`,
         );
 
         const snapshot = await get(libraryRef);
@@ -63,43 +67,47 @@ function Library() {
         }
 
         const data = snapshot.val();
-
         const books = Object.values(data);
 
         const unfinished = books.filter(
-          (book) => !book.finished
+          (book) => !book.finished,
         );
 
         const finished = books.filter(
-          (book) => book.finished
+          (book) => book.finished,
         );
 
         unfinished.sort(
           (a, b) =>
             (b.savedAt || 0) -
-            (a.savedAt || 0)
+            (a.savedAt || 0),
         );
 
         finished.sort(
           (a, b) =>
             (b.savedAt || 0) -
-            (a.savedAt || 0)
+            (a.savedAt || 0),
         );
 
         setSavedBooks(unfinished);
         setFinishedBooks(finished);
       } catch (error) {
         console.error(
-          "Failed to fetch library:",
-          error
+          "Failed to load library:",
+          error,
         );
       } finally {
-        setLoading(false);
+        if (showLoading) {
+          setLoading(false);
+        }
       }
-    };
+    },
+    [currentUser],
+  );
 
-    fetchLibrary();
-  }, [currentUser, location.key]);
+  useEffect(() => {
+    loadLibrary(true);
+  }, [loadLibrary, location.key]);
 
   useEffect(() => {
     const refreshLibrary = () => {
@@ -107,108 +115,46 @@ function Library() {
         return;
       }
 
-      const loadLibrary = async () => {
-        try {
-          const libraryRef = ref(
-            database,
-            `users/${currentUser.uid}/library`
-          );
-
-          const snapshot = await get(
-            libraryRef
-          );
-
-          if (!snapshot.exists()) {
-            setSavedBooks([]);
-            setFinishedBooks([]);
-            return;
-          }
-
-          const data = snapshot.val();
-
-          const books = Object.values(data);
-
-          const unfinished = books.filter(
-            (book) => !book.finished
-          );
-
-          const finished = books.filter(
-            (book) => book.finished
-          );
-
-          unfinished.sort(
-            (a, b) =>
-              (b.savedAt || 0) -
-              (a.savedAt || 0)
-          );
-
-          finished.sort(
-            (a, b) =>
-              (b.savedAt || 0) -
-              (a.savedAt || 0)
-          );
-
-          setSavedBooks(unfinished);
-          setFinishedBooks(finished);
-        } catch (error) {
-          console.error(
-            "Failed to refresh library:",
-            error
-          );
-        }
-      };
-
-      loadLibrary();
+      loadLibrary(false);
     };
 
     window.addEventListener(
       "focus",
-      refreshLibrary
+      refreshLibrary,
     );
 
     return () => {
       window.removeEventListener(
         "focus",
-        refreshLibrary
+        refreshLibrary,
       );
     };
-  }, [currentUser]);
+  }, [currentUser, loadLibrary]);
+
+  const showToast = useCallback(
+    (message, type = "success") => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
+      }
+
+      setToastType(type);
+      setToast(message);
+
+      toastTimeoutRef.current = setTimeout(() => {
+        setToast("");
+        toastTimeoutRef.current = null;
+      }, 3000);
+    },
+    [],
+  );
 
   useEffect(() => {
-    const handleEscape = (event) => {
-      if (
-        event.key === "Escape" &&
-        bookToRemove &&
-        !isRemoving
-      ) {
-        setBookToRemove(null);
+    return () => {
+      if (toastTimeoutRef.current) {
+        clearTimeout(toastTimeoutRef.current);
       }
     };
-
-    window.addEventListener(
-      "keydown",
-      handleEscape
-    );
-
-    return () => {
-      window.removeEventListener(
-        "keydown",
-        handleEscape
-      );
-    };
-  }, [bookToRemove, isRemoving]);
-
-  const showToast = (
-    message,
-    type = "success"
-  ) => {
-    setToastType(type);
-    setToast(message);
-
-    setTimeout(() => {
-      setToast("");
-    }, 3000);
-  };
+  }, []);
 
   const getProgress = (book) => {
     const progress = Number(book.progress);
@@ -226,8 +172,8 @@ function Library() {
       100,
       Math.max(
         0,
-        (progress / duration) * 100
-      )
+        (progress / duration) * 100,
+      ),
     );
   };
 
@@ -241,25 +187,21 @@ function Library() {
 
     const totalSeconds = Math.floor(seconds);
     const minutes = Math.floor(
-      totalSeconds / 60
+      totalSeconds / 60,
     );
     const remainingSeconds =
       totalSeconds % 60;
 
     return `${minutes}:${String(
-      remainingSeconds
+      remainingSeconds,
     ).padStart(2, "0")}`;
   };
 
   const continueListeningBooks = useMemo(() => {
     return savedBooks
       .filter((book) => {
-        const progress = Number(
-          book.progress
-        );
-        const duration = Number(
-          book.duration
-        );
+        const progress = Number(book.progress);
+        const duration = Number(book.duration);
 
         return (
           Number.isFinite(progress) &&
@@ -273,7 +215,7 @@ function Library() {
       .sort(
         (a, b) =>
           (b.lastPlayedAt || 0) -
-          (a.lastPlayedAt || 0)
+          (a.lastPlayedAt || 0),
       );
   }, [savedBooks]);
 
@@ -289,12 +231,8 @@ function Library() {
 
     if (filter === "in-progress") {
       books = books.filter((book) => {
-        const progress = Number(
-          book.progress
-        );
-        const duration = Number(
-          book.duration
-        );
+        const progress = Number(book.progress);
+        const duration = Number(book.duration);
 
         return (
           !book.finished &&
@@ -309,9 +247,7 @@ function Library() {
 
     if (filter === "not-started") {
       books = books.filter((book) => {
-        const progress = Number(
-          book.progress
-        );
+        const progress = Number(book.progress);
 
         return (
           !book.finished &&
@@ -323,7 +259,7 @@ function Library() {
 
     if (filter === "finished") {
       books = books.filter(
-        (book) => book.finished
+        (book) => book.finished,
       );
     }
 
@@ -352,7 +288,7 @@ function Library() {
       books.sort(
         (a, b) =>
           (b.savedAt || 0) -
-          (a.savedAt || 0)
+          (a.savedAt || 0),
       );
     }
 
@@ -360,23 +296,23 @@ function Library() {
       books.sort(
         (a, b) =>
           (b.lastPlayedAt || 0) -
-          (a.lastPlayedAt || 0)
+          (a.lastPlayedAt || 0),
       );
     }
 
     if (sortBy === "title") {
       books.sort((a, b) =>
         (a.title || "").localeCompare(
-          b.title || ""
-        )
+          b.title || "",
+        ),
       );
     }
 
     if (sortBy === "author") {
       books.sort((a, b) =>
         (a.author || "").localeCompare(
-          b.author || ""
-        )
+          b.author || "",
+        ),
       );
     }
 
@@ -388,10 +324,13 @@ function Library() {
     sortBy,
   ]);
 
-  const handleRemoveBook = (book) => {
+  const handleRemoveBook = (book, event) => {
     if (!currentUser || !book) {
       return;
     }
+
+    previousFocusedElementRef.current =
+      event?.currentTarget || null;
 
     setBookToRemove(book);
   };
@@ -410,7 +349,7 @@ function Library() {
     try {
       const bookRef = ref(
         database,
-        `users/${currentUser.uid}/library/${bookToRemove.id}`
+        `users/${currentUser.uid}/library/${bookToRemove.id}`,
       );
 
       await remove(bookRef);
@@ -419,32 +358,32 @@ function Library() {
         books.filter(
           (item) =>
             String(item.id) !==
-            String(bookToRemove.id)
-        )
+            String(bookToRemove.id),
+        ),
       );
 
       setFinishedBooks((books) =>
         books.filter(
           (item) =>
             String(item.id) !==
-            String(bookToRemove.id)
-        )
+            String(bookToRemove.id),
+        ),
       );
 
       showToast(
-        `"${bookToRemove.title}" was removed from your library.`
+        `"${bookToRemove.title}" was removed from your library.`,
       );
 
       setBookToRemove(null);
     } catch (error) {
       console.error(
         "Failed to remove book:",
-        error
+        error,
       );
 
       showToast(
         "Failed to remove the book from your library.",
-        "error"
+        "error",
       );
     } finally {
       setIsRemoving(false);
@@ -458,6 +397,120 @@ function Library() {
 
     setBookToRemove(null);
   };
+
+  useEffect(() => {
+    if (!bookToRemove) {
+      return;
+    }
+
+    previousFocusedElementRef.current =
+      previousFocusedElementRef.current ||
+      document.activeElement;
+
+    const focusTimer = setTimeout(() => {
+      cancelButtonRef.current?.focus();
+    }, 0);
+
+    return () => {
+      clearTimeout(focusTimer);
+    };
+  }, [bookToRemove]);
+
+  useEffect(() => {
+    if (!bookToRemove) {
+      return;
+    }
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        if (!isRemoving) {
+          event.preventDefault();
+          cancelRemoveBook();
+        }
+
+        return;
+      }
+
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const modal = modalRef.current;
+
+      if (!modal) {
+        return;
+      }
+
+      const focusableElements =
+        modal.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+
+      if (!focusableElements.length) {
+        return;
+      }
+
+      const firstElement =
+        focusableElements[0];
+
+      const lastElement =
+        focusableElements[
+          focusableElements.length - 1
+        ];
+
+      if (
+        event.shiftKey &&
+        document.activeElement === firstElement
+      ) {
+        event.preventDefault();
+        lastElement.focus();
+      } else if (
+        !event.shiftKey &&
+        document.activeElement === lastElement
+      ) {
+        event.preventDefault();
+        firstElement.focus();
+      }
+    };
+
+    document.addEventListener(
+      "keydown",
+      handleKeyDown,
+    );
+
+    return () => {
+      document.removeEventListener(
+        "keydown",
+        handleKeyDown,
+      );
+    };
+  }, [bookToRemove, isRemoving]);
+
+  useEffect(() => {
+    if (bookToRemove) {
+      return;
+    }
+
+    const previousElement =
+      previousFocusedElementRef.current;
+
+    if (
+      previousElement &&
+      typeof previousElement.focus === "function" &&
+      document.contains(previousElement)
+    ) {
+      const focusTimer = setTimeout(() => {
+        previousElement.focus();
+      }, 0);
+
+      previousFocusedElementRef.current =
+        null;
+
+      return () => {
+        clearTimeout(focusTimer);
+      };
+    }
+  }, [bookToRemove]);
 
   if (loading) {
     return (
@@ -520,12 +573,8 @@ function Library() {
 
   const inProgressCount =
     savedBooks.filter((book) => {
-      const progress = Number(
-        book.progress
-      );
-      const duration = Number(
-        book.duration
-      );
+      const progress = Number(book.progress);
+      const duration = Number(book.duration);
 
       return (
         !book.finished &&
@@ -539,9 +588,7 @@ function Library() {
 
   const notStartedCount =
     savedBooks.filter((book) => {
-      const progress = Number(
-        book.progress
-      );
+      const progress = Number(book.progress);
 
       return (
         !book.finished &&
@@ -576,8 +623,7 @@ function Library() {
           </div>
         </div>
 
-        {continueListeningBooks.length >
-          0 && (
+        {continueListeningBooks.length > 0 && (
           <section className="library-section">
             <div className="library-section__header">
               <div>
@@ -611,38 +657,32 @@ function Library() {
                           )}
 
                           <img
-                            src={
-                              book.imageLink
-                            }
+                            src={book.imageLink}
                             alt={book.title}
                             className="book-card__image"
                           />
                         </div>
 
-                        <h3>
-                          {book.title}
-                        </h3>
+                        <h3>{book.title}</h3>
 
-                        <p>
-                          {book.author}
-                        </p>
+                        <p>{book.author}</p>
                       </Link>
 
                       <div className="library-book-card__progress">
                         <div className="library-book-card__progress-header">
                           <span>
                             {formatTime(
-                              book.progress
+                              book.progress,
                             )}{" "}
                             /{" "}
                             {formatTime(
-                              book.duration
+                              book.duration,
                             )}
                           </span>
 
                           <span>
                             {Math.round(
-                              progress
+                              progress,
                             )}
                             %
                           </span>
@@ -668,17 +708,19 @@ function Library() {
                       <button
                         type="button"
                         className="library-book-card__remove"
-                        onClick={() =>
+                        onClick={(event) =>
                           handleRemoveBook(
-                            book
+                            book,
+                            event,
                           )
                         }
+                        aria-label={`Remove ${book.title} from your library`}
                       >
                         Remove
                       </button>
                     </div>
                   );
-                }
+                },
               )}
             </div>
           </section>
@@ -703,7 +745,7 @@ function Library() {
                 value={searchTerm}
                 onChange={(event) =>
                   setSearchTerm(
-                    event.target.value
+                    event.target.value,
                   )
                 }
                 aria-label="Search your library"
@@ -720,7 +762,7 @@ function Library() {
                 value={sortBy}
                 onChange={(event) =>
                   setSortBy(
-                    event.target.value
+                    event.target.value,
                   )
                 }
               >
@@ -843,17 +885,17 @@ function Library() {
                         <div className="library-book-card__progress-header">
                           <span>
                             {formatTime(
-                              book.progress
+                              book.progress,
                             )}{" "}
                             /{" "}
                             {formatTime(
-                              book.duration
+                              book.duration,
                             )}
                           </span>
 
                           <span>
                             {Math.round(
-                              progress
+                              progress,
                             )}
                             %
                           </span>
@@ -887,11 +929,13 @@ function Library() {
                     <button
                       type="button"
                       className="library-book-card__remove"
-                      onClick={() =>
+                      onClick={(event) =>
                         handleRemoveBook(
-                          book
+                          book,
+                          event,
                         )
                       }
+                      aria-label={`Remove ${book.title} from your library`}
                     >
                       Remove
                     </button>
@@ -957,58 +1001,52 @@ function Library() {
               </div>
 
               <div className="book-grid">
-                {finishedBooks.map(
-                  (book) => (
-                    <div
-                      className="library-book-card"
-                      key={`finished-${book.id}`}
+                {finishedBooks.map((book) => (
+                  <div
+                    className="library-book-card"
+                    key={`finished-${book.id}`}
+                  >
+                    <Link
+                      to={`/book/${book.id}`}
                     >
-                      <Link
-                        to={`/book/${book.id}`}
-                      >
-                        <div className="book-card__image-wrapper">
-                          {book.subscriptionRequired && (
-                            <span className="book-card__premium">
-                              Premium
-                            </span>
-                          )}
+                      <div className="book-card__image-wrapper">
+                        {book.subscriptionRequired && (
+                          <span className="book-card__premium">
+                            Premium
+                          </span>
+                        )}
 
-                          <img
-                            src={
-                              book.imageLink
-                            }
-                            alt={book.title}
-                            className="book-card__image"
-                          />
-                        </div>
+                        <img
+                          src={book.imageLink}
+                          alt={book.title}
+                          className="book-card__image"
+                        />
+                      </div>
 
-                        <h3>
-                          {book.title}
-                        </h3>
+                      <h3>{book.title}</h3>
 
-                        <p>
-                          {book.author}
-                        </p>
-                      </Link>
+                      <p>{book.author}</p>
+                    </Link>
 
-                      <span className="library-book-card__finished">
-                        ✓ Finished
-                      </span>
+                    <span className="library-book-card__finished">
+                      ✓ Finished
+                    </span>
 
-                      <button
-                        type="button"
-                        className="library-book-card__remove"
-                        onClick={() =>
-                          handleRemoveBook(
-                            book
-                          )
-                        }
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  )
-                )}
+                    <button
+                      type="button"
+                      className="library-book-card__remove"
+                      onClick={(event) =>
+                        handleRemoveBook(
+                          book,
+                          event,
+                        )
+                      }
+                      aria-label={`Remove ${book.title} from your library`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
               </div>
             </section>
           )}
@@ -1017,17 +1055,22 @@ function Library() {
       {bookToRemove && (
         <div
           className="library-modal"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="remove-book-title"
+          role="presentation"
         >
-          <div className="library-modal__content">
+          <div
+            ref={modalRef}
+            className="library-modal__content"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="remove-book-title"
+            aria-describedby="remove-book-description"
+          >
             <button
               type="button"
               className="library-modal__close"
               onClick={cancelRemoveBook}
               disabled={isRemoving}
-              aria-label="Close confirmation"
+              aria-label="Close removal confirmation"
             >
               ×
             </button>
@@ -1036,16 +1079,19 @@ function Library() {
               Remove Book?
             </h2>
 
-            <p>
+            <p id="remove-book-description">
               Are you sure you want to remove{" "}
               <strong>
                 "{bookToRemove.title}"
               </strong>{" "}
-              from your library?
+              from your library? Your listening
+              progress will also no longer be
+              associated with this saved book.
             </p>
 
             <div className="library-modal__actions">
               <button
+                ref={cancelButtonRef}
                 type="button"
                 className="library-modal__cancel"
                 onClick={cancelRemoveBook}
