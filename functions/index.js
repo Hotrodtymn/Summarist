@@ -13,7 +13,6 @@ const stripeSecretKey = defineSecret("STRIPE_SECRET_KEY");
 const stripeWebhookSecret = defineSecret("STRIPE_WEBHOOK_SECRET");
 
 const MONTHLY_PRICE_ID = "price_1UKlj8ARBLemtUtQsztUXLU5";
-
 const YEARLY_PRICE_ID = "price_1UKlj8ARBLemtUtQ8ejdANfm";
 
 exports.createCheckoutSession = onCall(
@@ -77,6 +76,62 @@ exports.createCheckoutSession = onCall(
         console.error("Stripe Checkout session creation failed:", error);
 
         throw new HttpsError("internal", "Unable to create checkout session.");
+      }
+    },
+);
+
+exports.createCustomerPortalSession = onCall(
+    {
+      secrets: [stripeSecretKey],
+    },
+    async (request) => {
+      if (!request.auth) {
+        throw new HttpsError(
+            "unauthenticated",
+            "You must be logged in to manage your subscription.",
+        );
+      }
+
+      const userId = request.auth.uid;
+
+      try {
+        const subscriptionSnapshot = await admin
+            .database()
+            .ref(`users/${userId}/subscription`)
+            .once("value");
+
+        const subscription = subscriptionSnapshot.val();
+
+        const customerId = subscription?.stripeCustomerId;
+
+        if (!customerId) {
+          throw new HttpsError(
+              "failed-precondition",
+              "No Stripe customer was found for this account.",
+          );
+        }
+
+        const stripe = new Stripe(stripeSecretKey.value());
+
+        const portalSession = await stripe.billingPortal.sessions.create({
+          customer: customerId,
+          return_url: "http://localhost:3000/settings",
+        });
+
+        return {
+          url: portalSession.url,
+        };
+      } catch (error) {
+        if (error instanceof HttpsError) {
+          throw error;
+        }
+
+        console.error("Stripe Customer Portal session creation failed:", error);
+
+        throw new HttpsError(
+            "internal",
+            "Unable to open subscription management.",
+        );
       }
     },
 );
@@ -234,3 +289,98 @@ exports.stripeWebhook = onRequest(
       }
     },
 );
+
+exports.getProtectedBook = onCall(async (request) => {
+  if (!request.auth) {
+    throw new HttpsError(
+        "unauthenticated",
+        "You must be signed in to access this book.",
+    );
+  }
+
+  const bookId = request.data?.bookId;
+
+  if (!bookId) {
+    throw new HttpsError("invalid-argument", "A book ID is required.");
+  }
+
+  const userId = request.auth.uid;
+
+  try {
+    const subscriptionSnapshot = await admin
+        .database()
+        .ref(`users/${userId}/subscription`)
+        .once("value");
+
+    const subscription = subscriptionSnapshot.val();
+
+    const isPremium =
+      subscription &&
+      subscription.plan === "premium" &&
+      (subscription.status === "trialing" || subscription.status === "active");
+
+    const bookResponse = await fetch(
+        `https://us-central1-summaristt.cloudfunctions.net/getBook?id=${bookId}`,
+    );
+
+    if (!bookResponse.ok) {
+      throw new HttpsError("not-found", "Book could not be found.");
+    }
+
+    const book = await bookResponse.json();
+
+    if (book.subscriptionRequired && !isPremium) {
+      throw new HttpsError(
+          "permission-denied",
+          "Premium subscription required.",
+      );
+    }
+
+    let protectedAudioLink = book.audioLink;
+
+    if (book.audioLink) {
+      try {
+        const audioUrl = new URL(book.audioLink);
+
+        const encodedPath = audioUrl.pathname.split("/o/")[1];
+
+        if (!encodedPath) {
+          throw new Error("Unable to determine audio file path.");
+        }
+
+        const filePath = decodeURIComponent(encodedPath);
+
+        const bucket = admin.storage().bucket("summaristt.appspot.com");
+
+        const file = bucket.file(filePath);
+
+        const [signedUrl] = await file.getSignedUrl({
+          version: "v4",
+          action: "read",
+          expires: Date.now() + 5 * 60 * 1000,
+        });
+
+        protectedAudioLink = signedUrl;
+      } catch (audioError) {
+        console.error("Failed to create protected audio URL:", audioError);
+
+        throw new HttpsError("internal", "Unable to secure the book audio.");
+      }
+    }
+
+    return {
+      ...book,
+      audioLink: protectedAudioLink,
+      accessGranted: true,
+    };
+  } catch (error) {
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+
+    console.error("Protected book error:", error);
+
+    throw new HttpsError("internal", "Unable to load the book.");
+  }
+});
+

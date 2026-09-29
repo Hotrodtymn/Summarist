@@ -1,39 +1,129 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { getFunctions, httpsCallable } from "firebase/functions";
 
 import loginImage from "../assets/login.png";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "../components/AuthModal";
-import { getSubscriptionStatus } from "../utils/subscription";
+import { getSubscription } from "../utils/subscription";
 
 function Settings() {
   const { currentUser } = useAuth();
 
   const [showAuthModal, setShowAuthModal] = useState(false);
-  const [subscription, setSubscription] = useState("basic");
+  const [subscription, setSubscription] = useState({
+    plan: "basic",
+    status: "inactive",
+  });
   const [loadingSubscription, setLoadingSubscription] =
     useState(true);
+  const [isManagingSubscription, setIsManagingSubscription] =
+    useState(false);
+  const [subscriptionError, setSubscriptionError] =
+    useState("");
 
-  useEffect(() => {
-    const loadSubscription = async () => {
-      if (!currentUser) {
-        setSubscription("basic");
-        setLoadingSubscription(false);
-        return;
-      }
+  const loadSubscription = useCallback(async () => {
+    if (!currentUser) {
+      setSubscription({
+        plan: "basic",
+        status: "inactive",
+      });
+      setLoadingSubscription(false);
+      return;
+    }
 
-      setLoadingSubscription(true);
+    setLoadingSubscription(true);
+    setSubscriptionError("");
 
-      const plan = await getSubscriptionStatus(
+    try {
+      const userSubscription = await getSubscription(
         currentUser.uid
       );
 
-      setSubscription(plan);
+      setSubscription(userSubscription);
+    } catch (error) {
+      console.error(
+        "Failed to load subscription:",
+        error
+      );
+
+      setSubscriptionError(
+        "Unable to load your subscription status."
+      );
+    } finally {
       setLoadingSubscription(false);
+    }
+  }, [currentUser]);
+
+  useEffect(() => {
+    loadSubscription();
+  }, [loadSubscription]);
+
+  useEffect(() => {
+    const handleWindowFocus = () => {
+      loadSubscription();
     };
 
-    loadSubscription();
-  }, [currentUser]);
+    window.addEventListener(
+      "focus",
+      handleWindowFocus
+    );
+
+    return () => {
+      window.removeEventListener(
+        "focus",
+        handleWindowFocus
+      );
+    };
+  }, [loadSubscription]);
+
+  const isPremium =
+    subscription.plan === "premium" &&
+    (
+      subscription.status === "trialing" ||
+      subscription.status === "active"
+    );
+
+  const handleManageSubscription = async () => {
+    if (!currentUser || !isPremium) {
+      return;
+    }
+
+    setSubscriptionError("");
+    setIsManagingSubscription(true);
+
+    try {
+      const functions = getFunctions();
+
+      const createCustomerPortalSession = httpsCallable(
+        functions,
+        "createCustomerPortalSession"
+      );
+
+      const result = await createCustomerPortalSession();
+
+      const portalUrl = result.data?.url;
+
+      if (!portalUrl) {
+        throw new Error(
+          "Stripe customer portal URL was not returned."
+        );
+      }
+
+      window.location.href = portalUrl;
+    } catch (error) {
+      console.error(
+        "Failed to open subscription management:",
+        error
+      );
+
+      setSubscriptionError(
+        "Unable to open subscription management. Please try again."
+      );
+
+      setIsManagingSubscription(false);
+    }
+  };
 
   if (!currentUser) {
     return (
@@ -72,10 +162,6 @@ function Settings() {
     );
   }
 
-  const isPremium =
-    subscription === "premium" ||
-    subscription === "premium-plus";
-
   return (
     <main className="settings-page">
       <div className="settings-page__container">
@@ -110,21 +196,36 @@ function Settings() {
             <div className="settings-card__subscription">
               <div>
                 <h3>
-                  {isPremium
-                    ? subscription === "premium-plus"
-                      ? "Premium Plus"
-                      : "Premium"
-                    : "Basic"}
+                  {isPremium ? "Premium" : "Basic"}
                 </h3>
 
                 <p>
                   {isPremium
-                    ? "You have access to premium Summarist content."
+                    ? subscription.status === "trialing"
+                      ? "Your 7-day Premium trial is active."
+                      : "You have an active Premium subscription."
                     : "You currently have a free Summarist account."}
                 </p>
+
+                {isPremium && (
+                  <p className="settings-card__status">
+                    Status: {subscription.status}
+                  </p>
+                )}
               </div>
 
-              {!isPremium && (
+              {isPremium ? (
+                <button
+                  type="button"
+                  className="book-page__button"
+                  onClick={handleManageSubscription}
+                  disabled={isManagingSubscription}
+                >
+                  {isManagingSubscription
+                    ? "Opening..."
+                    : "Manage Subscription"}
+                </button>
+              ) : (
                 <Link
                   to="/choose-plan"
                   className="book-page__button"
@@ -133,6 +234,15 @@ function Settings() {
                 </Link>
               )}
             </div>
+          )}
+
+          {subscriptionError && (
+            <p
+              className="plan-card__error"
+              role="alert"
+            >
+              {subscriptionError}
+            </p>
           )}
         </section>
       </div>

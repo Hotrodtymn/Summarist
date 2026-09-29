@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { getFunctions, httpsCallable } from "firebase/functions";
 
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "../components/AuthModal";
+import { getSubscription } from "../utils/subscription";
 
 function ChoosePlan() {
   const { currentUser } = useAuth();
@@ -13,6 +14,48 @@ function ChoosePlan() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isCheckingOut, setIsCheckingOut] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [subscription, setSubscription] = useState({
+    plan: "basic",
+    status: "inactive",
+  });
+  const [loadingSubscription, setLoadingSubscription] = useState(true);
+
+  useEffect(() => {
+    const loadSubscription = async () => {
+      if (!currentUser) {
+        setSubscription({
+          plan: "basic",
+          status: "inactive",
+        });
+        setLoadingSubscription(false);
+        return;
+      }
+
+      try {
+        const userSubscription = await getSubscription(
+          currentUser.uid
+        );
+
+        setSubscription(userSubscription);
+      } catch (error) {
+        console.error(
+          "Failed to load subscription:",
+          error
+        );
+      } finally {
+        setLoadingSubscription(false);
+      }
+    };
+
+    loadSubscription();
+  }, [currentUser]);
+
+  const isPremium =
+    subscription.plan === "premium" &&
+    (
+      subscription.status === "trialing" ||
+      subscription.status === "active"
+    );
 
   const toggleSection = (section) => {
     setOpenSection(
@@ -23,6 +66,10 @@ function ChoosePlan() {
   const handleUpgrade = async () => {
     if (!currentUser) {
       setShowAuthModal(true);
+      return;
+    }
+
+    if (isPremium) {
       return;
     }
 
@@ -83,12 +130,32 @@ function ChoosePlan() {
           </p>
         </div>
 
+        {currentUser && !loadingSubscription && (
+          <div className="plan-status">
+            <span>
+              Current plan:
+            </span>
+
+            <strong>
+              {isPremium ? "Premium" : "Basic"}
+            </strong>
+
+            {isPremium && (
+              <span>
+                {subscription.status === "trialing"
+                  ? "7-day free trial"
+                  : "Active subscription"}
+              </span>
+            )}
+          </div>
+        )}
+
         <div className="plan-toggle">
           <button
             type="button"
             className={!isAnnual ? "plan-toggle__active" : ""}
             onClick={() => setIsAnnual(false)}
-            disabled={isCheckingOut}
+            disabled={isCheckingOut || isPremium}
           >
             Monthly
           </button>
@@ -97,7 +164,7 @@ function ChoosePlan() {
             type="button"
             className={isAnnual ? "plan-toggle__active" : ""}
             onClick={() => setIsAnnual(true)}
-            disabled={isCheckingOut}
+            disabled={isCheckingOut || isPremium}
           >
             Yearly
           </button>
@@ -127,7 +194,7 @@ function ChoosePlan() {
               className="plan-card__button plan-card__button--secondary"
               disabled
             >
-              Current plan
+              {isPremium ? "Available" : "Current plan"}
             </button>
           </section>
 
@@ -165,11 +232,16 @@ function ChoosePlan() {
               type="button"
               className="plan-card__button"
               onClick={handleUpgrade}
-              disabled={isCheckingOut}
+              disabled={
+                isCheckingOut ||
+                isPremium
+              }
             >
               {isCheckingOut
                 ? "Opening checkout..."
-                : "Upgrade to Premium"}
+                : isPremium
+                  ? "Current plan"
+                  : "Upgrade to Premium"}
             </button>
 
             {checkoutError && (

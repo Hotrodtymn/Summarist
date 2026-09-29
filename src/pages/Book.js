@@ -9,6 +9,7 @@ import {
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "../components/AuthModal";
+import { isPremiumUser } from "../utils/subscription";
 
 function Book() {
   const { id } = useParams();
@@ -20,6 +21,7 @@ function Book() {
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [checkingSubscription, setCheckingSubscription] = useState(false);
 
   useEffect(() => {
     const fetchBook = async () => {
@@ -64,13 +66,41 @@ function Book() {
     checkLibrary();
   }, [currentUser, id]);
 
-  const handleProtectedAction = () => {
+  const handleProtectedAction = async () => {
     if (!currentUser) {
       setShowAuthModal(true);
       return;
     }
 
-    navigate(`/player/${id}`);
+    if (!book) {
+      return;
+    }
+
+    if (!book.subscriptionRequired) {
+      navigate(`/player/${id}`);
+      return;
+    }
+
+    setCheckingSubscription(true);
+
+    try {
+      const premium = await isPremiumUser(currentUser.uid);
+
+      if (premium) {
+        navigate(`/player/${id}`);
+      } else {
+        navigate("/choose-plan");
+      }
+    } catch (error) {
+      console.error(
+        "Failed to check subscription:",
+        error
+      );
+
+      navigate("/choose-plan");
+    } finally {
+      setCheckingSubscription(false);
+    }
   };
 
   const handleAddToLibrary = async () => {
@@ -106,7 +136,10 @@ function Book() {
 
       setIsSaved(true);
     } catch (error) {
-      console.error("Failed to add book to library:", error);
+      console.error(
+        "Failed to add book to library:",
+        error
+      );
     } finally {
       setIsSaving(false);
     }
@@ -184,6 +217,12 @@ function Book() {
           />
 
           <div className="book-page__info">
+            {book.subscriptionRequired && (
+              <div className="book-page__premium-badge">
+                🔒 Premium
+              </div>
+            )}
+
             <h1>{book.title}</h1>
 
             <p className="book-page__author">
@@ -203,8 +242,13 @@ function Book() {
                 type="button"
                 className="book-page__button"
                 onClick={handleProtectedAction}
+                disabled={checkingSubscription}
               >
-                Listen
+                {checkingSubscription
+                  ? "Checking..."
+                  : book.subscriptionRequired
+                    ? "Listen with Premium"
+                    : "Listen"}
               </button>
 
               <button

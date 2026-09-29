@@ -165,6 +165,7 @@ function Library() {
         <div className="library-page__container">
           <div className="library-page__header">
             <h1>My Library</h1>
+
             <p>
               Log in to save books and keep track of your reading.
             </p>
@@ -281,6 +282,12 @@ function Library() {
                 >
                   <Link to={`/book/${book.id}`}>
                     <div className="book-card__image-wrapper">
+                      {book.subscriptionRequired && (
+                        <span className="book-card__premium">
+                          Premium
+                        </span>
+                      )}
+
                       <img
                         src={book.imageLink}
                         alt={book.title}

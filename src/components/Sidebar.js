@@ -1,12 +1,41 @@
+import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { signOut } from "firebase/auth";
+
 import { auth } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import { getSubscription } from "../utils/subscription";
+
 import logo from "../assets/logo.png";
 
 function Sidebar() {
   const { currentUser } = useAuth();
   const location = useLocation();
+
+  const [subscription, setSubscription] = useState({
+    plan: "basic",
+    status: "inactive",
+  });
+
+  useEffect(() => {
+    const loadSubscription = async () => {
+      if (!currentUser) {
+        setSubscription({
+          plan: "basic",
+          status: "inactive",
+        });
+        return;
+      }
+
+      const userSubscription = await getSubscription(
+        currentUser.uid
+      );
+
+      setSubscription(userSubscription);
+    };
+
+    loadSubscription();
+  }, [currentUser]);
 
   const handleLogout = async () => {
     try {
@@ -15,6 +44,13 @@ function Sidebar() {
       console.error("Logout failed:", error);
     }
   };
+
+  const isPremium =
+    subscription.plan === "premium" &&
+    (
+      subscription.status === "trialing" ||
+      subscription.status === "active"
+    );
 
   return (
     <aside className="sidebar">
@@ -39,7 +75,11 @@ function Sidebar() {
 
         <Link
           to="/library"
-          className="sidebar__link"
+          className={`sidebar__link ${
+            location.pathname === "/library"
+              ? "sidebar__link--active"
+              : ""
+          }`}
         >
           <span className="sidebar__icon">▣</span>
           <span>Library</span>
@@ -65,7 +105,11 @@ function Sidebar() {
 
         <Link
           to="/settings"
-          className="sidebar__link"
+          className={`sidebar__link ${
+            location.pathname === "/settings"
+              ? "sidebar__link--active"
+              : ""
+          }`}
         >
           <span className="sidebar__icon">⚙</span>
           <span>Settings</span>
@@ -82,6 +126,21 @@ function Sidebar() {
       </nav>
 
       <div className="sidebar__bottom">
+        {currentUser && (
+          <Link
+            to={isPremium ? "/settings" : "/choose-plan"}
+            className="sidebar__subscription"
+          >
+            <span className="sidebar__subscription-label">
+              {isPremium ? "Premium" : "Basic"}
+            </span>
+
+            <span className="sidebar__subscription-action">
+              {isPremium ? "Manage plan" : "Upgrade"}
+            </span>
+          </Link>
+        )}
+
         {currentUser ? (
           <button
             type="button"

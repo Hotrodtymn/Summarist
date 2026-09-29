@@ -60,25 +60,30 @@ function ForYou() {
   return (
     <main className="for-you">
       <div className="books__container">
-
         {/* SELECTED BOOK */}
 
         {selectedBook && (
           <section className="selected-book">
             <Link to={`/book/${selectedBook.id}`}>
-              <img
-                src={selectedBook.imageLink}
-                alt={selectedBook.title}
-              />
+              <div className="selected-book__image-wrapper">
+                {selectedBook.subscriptionRequired && (
+                  <span className="book-card__premium">
+                    Premium
+                  </span>
+                )}
+
+                <img
+                  src={selectedBook.imageLink}
+                  alt={selectedBook.title}
+                />
+              </div>
 
               <div className="selected-book__content">
                 <h1>{selectedBook.title}</h1>
 
                 <p>{selectedBook.author}</p>
 
-                <p>
-                  {selectedBook.subTitle}
-                </p>
+                <p>{selectedBook.subTitle}</p>
               </div>
             </Link>
           </section>
@@ -151,7 +156,6 @@ function ForYou() {
             ))}
           </div>
         </section>
-
       </div>
     </main>
   );
