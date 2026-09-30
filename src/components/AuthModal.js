@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import {
   createUserWithEmailAndPassword,
@@ -10,15 +9,13 @@ import {
 import { auth } from "../firebase";
 
 function AuthModal({ onClose }) {
-  const [isRegistering, setIsRegistering] =
-    useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
   const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit() {
     setError("");
@@ -58,13 +55,9 @@ function AuthModal({ onClose }) {
     setIsSubmitting(true);
 
     try {
-      const provider =
-        new GoogleAuthProvider();
+      const provider = new GoogleAuthProvider();
 
-      await signInWithPopup(
-        auth,
-        provider
-      );
+      await signInWithPopup(auth, provider);
 
       onClose();
     } catch (error) {
@@ -85,18 +78,28 @@ function AuthModal({ onClose }) {
     setIsSubmitting(true);
 
     try {
-      await signInAnonymously(auth);
+      console.log("Starting anonymous authentication...");
+
+      const result = await signInAnonymously(auth);
+
+      console.log(
+        "Guest authentication successful:",
+        result.user.uid
+      );
 
       onClose();
     } catch (error) {
       console.error(
         "Guest authentication failed:",
-        error.code,
-        error.message
+        error
       );
 
+      console.error("Error code:", error.code);
+      console.error("Error message:", error.message);
+
       setError(
-        "Unable to continue as a guest. Please try again."
+        error.message ||
+          "Unable to continue as a guest. Please try again."
       );
     } finally {
       setIsSubmitting(false);
@@ -104,9 +107,7 @@ function AuthModal({ onClose }) {
   }
 
   function toggleAuthMode() {
-    setIsRegistering(
-      !isRegistering
-    );
+    setIsRegistering(!isRegistering);
     setError("");
   }
 
@@ -214,7 +215,9 @@ function AuthModal({ onClose }) {
             onClick={handleGuestLogin}
             disabled={isSubmitting}
           >
-            Continue as Guest
+            {isSubmitting
+              ? "Please wait..."
+              : "Continue as Guest"}
           </button>
         )}
 
