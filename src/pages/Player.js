@@ -208,15 +208,15 @@ function Player() {
     navigate,
   ]);
 
-  useEffect(() => {
-    return () => {
-      const audio = audioRef.current;
+ useEffect(() => {
+  const audio = audioRef.current;
 
-      if (audio) {
-        audio.pause();
-      }
-    };
-  }, [id]);
+  return () => {
+    if (audio) {
+      audio.pause();
+    }
+  };
+}, [id]);
 
   const handleLoadedMetadata = () => {
     const audio = audioRef.current;
