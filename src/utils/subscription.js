@@ -1,15 +1,17 @@
 import { get, ref } from "firebase/database";
 import { database } from "../firebase";
 
+const DEFAULT_SUBSCRIPTION = {
+  plan: "basic",
+  status: "inactive",
+  cancelAtPeriodEnd: false,
+  currentPeriodEnd: null,
+  trialEnd: null,
+};
+
 export async function getSubscription(userId) {
   if (!userId) {
-    return {
-      plan: "basic",
-      status: "inactive",
-      cancelAtPeriodEnd: false,
-      currentPeriodEnd: null,
-      trialEnd: null,
-    };
+    return DEFAULT_SUBSCRIPTION;
   }
 
   try {
@@ -21,13 +23,7 @@ export async function getSubscription(userId) {
     const snapshot = await get(subscriptionRef);
 
     if (!snapshot.exists()) {
-      return {
-        plan: "basic",
-        status: "inactive",
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: null,
-        trialEnd: null,
-      };
+      return DEFAULT_SUBSCRIPTION;
     }
 
     const subscription = snapshot.val();
@@ -48,24 +44,20 @@ export async function getSubscription(userId) {
       error
     );
 
-    return {
-      plan: "basic",
-      status: "inactive",
-      cancelAtPeriodEnd: false,
-      currentPeriodEnd: null,
-      trialEnd: null,
-    };
+    return DEFAULT_SUBSCRIPTION;
   }
 }
 
 export async function getSubscriptionStatus(userId) {
-  const subscription = await getSubscription(userId);
+  const subscription =
+    await getSubscription(userId);
 
   return subscription.plan;
 }
 
 export async function isPremiumUser(userId) {
-  const subscription = await getSubscription(userId);
+  const subscription =
+    await getSubscription(userId);
 
   return (
     subscription.plan === "premium" &&

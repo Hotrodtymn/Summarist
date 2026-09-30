@@ -1,51 +1,108 @@
-import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { get, ref, remove, set } from "firebase/database";
+import {
+  useEffect,
+  useState,
+} from "react";
+import {
+  useNavigate,
+  useParams,
+} from "react-router-dom";
+import {
+  get,
+  ref,
+  remove,
+  set,
+} from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "../components/AuthModal";
 import { isPremiumUser } from "../utils/subscription";
 
+const BOOK_API =
+  "https://us-central1-summaristt.cloudfunctions.net/getBook";
+
 function Book() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+
+  const {
+    currentUser,
+    isAuthenticated,
+  } = useAuth();
 
   const [book, setBook] = useState(null);
   const [loading, setLoading] = useState(true);
-
   const [isSaved, setIsSaved] = useState(false);
-  const [showAuthModal, setShowAuthModal] = useState(false);
 
-  const [isSaving, setIsSaving] = useState(false);
+  const [showAuthModal, setShowAuthModal] =
+    useState(false);
+
+  const [isSaving, setIsSaving] =
+    useState(false);
 
   const [toast, setToast] = useState("");
-  const [toastType, setToastType] = useState("success");
+  const [toastType, setToastType] =
+    useState("success");
 
   useEffect(() => {
+    let isCancelled = false;
+
     const fetchBook = async () => {
+      setLoading(true);
+
       try {
         const response = await fetch(
-          `https://us-central1-summaristt.cloudfunctions.net/getBook?id=${id}`,
+          `${BOOK_API}?id=${encodeURIComponent(id)}`
         );
+
+        if (!response.ok) {
+          throw new Error(
+            "Failed to fetch book."
+          );
+        }
 
         const data = await response.json();
 
-        setBook(data);
+        if (!isCancelled) {
+          setBook(data);
+        }
       } catch (error) {
-        console.error("Failed to fetch book:", error);
+        console.error(
+          "Failed to fetch book:",
+          error
+        );
+
+        if (!isCancelled) {
+          setBook(null);
+        }
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchBook();
+    if (id) {
+      fetchBook();
+    } else {
+      setBook(null);
+      setLoading(false);
+    }
+
+    return () => {
+      isCancelled = true;
+    };
   }, [id]);
 
   useEffect(() => {
+    let isCancelled = false;
+
     const checkLibrary = async () => {
-      if (!currentUser || !id) {
+      if (
+        !currentUser ||
+        !isAuthenticated ||
+        !id
+      ) {
         setIsSaved(false);
         return;
       }
@@ -53,31 +110,77 @@ function Book() {
       try {
         const libraryRef = ref(
           database,
-          `users/${currentUser.uid}/library/${id}`,
+          `users/${currentUser.uid}/library/${String(id)}`
         );
 
-        const snapshot = await get(libraryRef);
+        const snapshot = await get(
+          libraryRef
+        );
 
-        setIsSaved(snapshot.exists());
+        if (!isCancelled) {
+          setIsSaved(snapshot.exists());
+        }
       } catch (error) {
-        console.error("Failed to check library:", error);
+        console.error(
+          "Failed to check library:",
+          error
+        );
+
+        if (!isCancelled) {
+          setIsSaved(false);
+        }
       }
     };
 
     checkLibrary();
-  }, [currentUser, id]);
 
-  const showToast = (message, type = "success") => {
-    setToastType(type);
-    setToast(message);
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    currentUser,
+    isAuthenticated,
+    id,
+  ]);
 
-    setTimeout(() => {
+  useEffect(() => {
+    if (!toast) {
+      return;
+    }
+
+    const timeout = setTimeout(() => {
       setToast("");
     }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [toast]);
+
+  const showToast = (
+    message,
+    type = "success"
+  ) => {
+    setToastType(type);
+    setToast(message);
+  };
+
+  const getBookDescription = () => {
+    if (!book) {
+      return "";
+    }
+
+    return (
+      book.bookDescription ||
+      book.description ||
+      book.summary ||
+      ""
+    );
   };
 
   const handleProtectedAction = async () => {
-    if (!currentUser) {
+    if (
+      !currentUser ||
+      !isAuthenticated
+    ) {
       setShowAuthModal(true);
       return;
     }
@@ -91,18 +194,33 @@ function Book() {
       return;
     }
 
-    const premium = await isPremiumUser(currentUser.uid);
+    try {
+      const premium =
+        await isPremiumUser(
+          currentUser.uid
+        );
 
-    if (premium) {
-      navigate(`/player/${book.id}`);
-      return;
+      if (premium) {
+        navigate(`/player/${book.id}`);
+        return;
+      }
+
+      navigate("/choose-plan");
+    } catch (error) {
+      console.error(
+        "Failed to check subscription:",
+        error
+      );
+
+      navigate("/choose-plan");
     }
-
-    navigate("/choose-plan");
   };
 
   const handleAddToLibrary = async () => {
-    if (!currentUser) {
+    if (
+      !currentUser ||
+      !isAuthenticated
+    ) {
       setShowAuthModal(true);
       return;
     }
@@ -114,61 +232,92 @@ function Book() {
     setIsSaving(true);
 
     try {
+      const bookId = String(book.id);
+
       const libraryRef = ref(
         database,
-        `users/${currentUser.uid}/library/${book.id}`,
+        `users/${currentUser.uid}/library/${bookId}`
       );
 
       await set(libraryRef, {
         id: book.id,
         title: book.title || "",
         author: book.author || "",
-        subTitle: book.subTitle || "",
-        description: book.description || "",
-        imageLink: book.imageLink || "",
-        subscriptionRequired: book.subscriptionRequired || false,
+        subTitle:
+          book.subTitle || "",
+        description:
+          getBookDescription(),
+        imageLink:
+          book.imageLink || "",
+        subscriptionRequired:
+          book.subscriptionRequired ||
+          false,
         finished: false,
         savedAt: Date.now(),
       });
 
       setIsSaved(true);
 
-      showToast(`"${book.title}" was added to your library.`);
+      showToast(
+        `"${book.title}" was added to your library.`
+      );
     } catch (error) {
-      console.error("Failed to add book to library:", error);
-
-      showToast("Failed to add the book to your library.", "error");
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleRemoveFromLibrary = async () => {
-    if (!currentUser || !book || isSaving) {
-      return;
-    }
-
-    setIsSaving(true);
-
-    try {
-      const libraryRef = ref(
-        database,
-        `users/${currentUser.uid}/library/${book.id}`,
+      console.error(
+        "Failed to add book to library:",
+        error
       );
 
-      await remove(libraryRef);
-
-      setIsSaved(false);
-
-      showToast(`"${book.title}" was removed from your library.`);
-    } catch (error) {
-      console.error("Failed to remove book from library:", error);
-
-      showToast("Failed to remove the book from your library.", "error");
+      showToast(
+        "Failed to add the book to your library.",
+        "error"
+      );
     } finally {
       setIsSaving(false);
     }
   };
+
+  const handleRemoveFromLibrary =
+    async () => {
+      if (
+        !currentUser ||
+        !isAuthenticated ||
+        !book ||
+        isSaving
+      ) {
+        return;
+      }
+
+      setIsSaving(true);
+
+      try {
+        const bookId = String(book.id);
+
+        const libraryRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${bookId}`
+        );
+
+        await remove(libraryRef);
+
+        setIsSaved(false);
+
+        showToast(
+          `"${book.title}" was removed from your library.`
+        );
+      } catch (error) {
+        console.error(
+          "Failed to remove book from library:",
+          error
+        );
+
+        showToast(
+          "Failed to remove the book from your library.",
+          "error"
+        );
+      } finally {
+        setIsSaving(false);
+      }
+    };
 
   if (loading) {
     return (
@@ -187,12 +336,17 @@ function Book() {
           <div className="library__empty">
             <h1>Book Not Found</h1>
 
-            <p>We couldn't find the book you're looking for.</p>
+            <p>
+              We couldn't find the book
+              you're looking for.
+            </p>
 
             <button
               type="button"
               className="book-page__button"
-              onClick={() => navigate("/for-you")}
+              onClick={() =>
+                navigate("/for-you")
+              }
             >
               Back to Books
             </button>
@@ -207,13 +361,19 @@ function Book() {
       <div className="book-page__container">
         <div className="book-page__image-wrapper">
           {book.subscriptionRequired && (
-            <span className="book-card__premium">Premium</span>
+            <span className="book-card__premium">
+              Premium
+            </span>
           )}
 
           <img
             src={book.imageLink}
             alt={book.title}
             className="book-page__image"
+            onError={(event) => {
+              event.currentTarget.style.visibility =
+                "hidden";
+            }}
           />
         </div>
 
@@ -222,36 +382,54 @@ function Book() {
 
           <h2>{book.author}</h2>
 
-          <p className="book-page__subtitle">{book.subTitle}</p>
+          {book.subTitle && (
+            <p className="book-page__subtitle">
+              {book.subTitle}
+            </p>
+          )}
 
-          <p className="book-page__description">{book.description}</p>
+          <p className="book-page__description">
+            {getBookDescription()}
+          </p>
 
           <div className="book-page__actions">
             <button
               type="button"
               className="book-page__button"
-              onClick={handleProtectedAction}
+              onClick={
+                handleProtectedAction
+              }
             >
-              {book.subscriptionRequired ? "Listen with Premium" : "Listen"}
+              {book.subscriptionRequired
+                ? "Listen with Premium"
+                : "Listen"}
             </button>
 
             {isSaved ? (
               <button
                 type="button"
                 className="book-page__button book-page__button--secondary"
-                onClick={handleRemoveFromLibrary}
+                onClick={
+                  handleRemoveFromLibrary
+                }
                 disabled={isSaving}
               >
-                {isSaving ? "Removing..." : "Remove from Library"}
+                {isSaving
+                  ? "Removing..."
+                  : "Remove from Library"}
               </button>
             ) : (
               <button
                 type="button"
                 className="book-page__button book-page__button--secondary"
-                onClick={handleAddToLibrary}
+                onClick={
+                  handleAddToLibrary
+                }
                 disabled={isSaving}
               >
-                {isSaving ? "Adding..." : "Add to Library"}
+                {isSaving
+                  ? "Adding..."
+                  : "Add to Library"}
               </button>
             )}
           </div>
@@ -265,7 +443,9 @@ function Book() {
           aria-live="polite"
         >
           <span className="library-toast__icon">
-            {toastType === "error" ? "!" : "✓"}
+            {toastType === "error"
+              ? "!"
+              : "✓"}
           </span>
 
           <span>{toast}</span>
@@ -274,7 +454,9 @@ function Book() {
             <button
               type="button"
               className="library-toast__link"
-              onClick={() => navigate("/library")}
+              onClick={() =>
+                navigate("/library")
+              }
             >
               View Library
             </button>
@@ -283,7 +465,9 @@ function Book() {
           <button
             type="button"
             className="library-toast__close"
-            onClick={() => setToast("")}
+            onClick={() =>
+              setToast("")
+            }
             aria-label="Close notification"
           >
             ×
@@ -291,7 +475,13 @@ function Book() {
         </div>
       )}
 
-      {showAuthModal && <AuthModal onClose={() => setShowAuthModal(false)} />}
+      {showAuthModal && (
+        <AuthModal
+          onClose={() =>
+            setShowAuthModal(false)
+          }
+        />
+      )}
     </main>
   );
 }

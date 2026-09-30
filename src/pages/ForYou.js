@@ -1,44 +1,124 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-function ForYou() {
-  const [selectedBook, setSelectedBook] = useState(null);
-  const [recommendedBooks, setRecommendedBooks] = useState([]);
-  const [suggestedBooks, setSuggestedBooks] = useState([]);
+const BOOKS_API =
+  "https://us-central1-summaristt.cloudfunctions.net/getBooks";
 
-  const [loading, setLoading] = useState(true);
+function ForYou() {
+  const [selectedBook, setSelectedBook] =
+    useState(null);
+
+  const [recommendedBooks, setRecommendedBooks] =
+    useState([]);
+
+  const [suggestedBooks, setSuggestedBooks] =
+    useState([]);
+
+  const [loading, setLoading] =
+    useState(true);
+
+  const [error, setError] =
+    useState("");
 
   useEffect(() => {
+    let isCancelled = false;
+
     const fetchBooks = async () => {
+      setLoading(true);
+      setError("");
+
       try {
-        const [selectedResponse, recommendedResponse, suggestedResponse] =
-          await Promise.all([
-            fetch(
-              "https://us-central1-summaristt.cloudfunctions.net/getBooks?status=selected"
-            ),
-            fetch(
-              "https://us-central1-summaristt.cloudfunctions.net/getBooks?status=recommended"
-            ),
-            fetch(
-              "https://us-central1-summaristt.cloudfunctions.net/getBooks?status=suggested"
-            ),
-          ]);
+        const [
+          selectedResponse,
+          recommendedResponse,
+          suggestedResponse,
+        ] = await Promise.all([
+          fetch(
+            `${BOOKS_API}?status=selected`
+          ),
+          fetch(
+            `${BOOKS_API}?status=recommended`
+          ),
+          fetch(
+            `${BOOKS_API}?status=suggested`
+          ),
+        ]);
 
-        const selectedData = await selectedResponse.json();
-        const recommendedData = await recommendedResponse.json();
-        const suggestedData = await suggestedResponse.json();
+        if (
+          !selectedResponse.ok ||
+          !recommendedResponse.ok ||
+          !suggestedResponse.ok
+        ) {
+          throw new Error(
+            "Failed to fetch books."
+          );
+        }
 
-        setSelectedBook(selectedData);
-        setRecommendedBooks(recommendedData);
-        setSuggestedBooks(suggestedData);
-      } catch (error) {
-        console.error("Failed to fetch books:", error);
+        const selectedData =
+          await selectedResponse.json();
+
+        const recommendedData =
+          await recommendedResponse.json();
+
+        const suggestedData =
+          await suggestedResponse.json();
+
+        if (isCancelled) {
+          return;
+        }
+
+        setSelectedBook(
+          selectedData &&
+          !Array.isArray(selectedData)
+            ? selectedData
+            : Array.isArray(
+                selectedData
+              )
+            ? selectedData[0] || null
+            : null
+        );
+
+        setRecommendedBooks(
+          Array.isArray(
+            recommendedData
+          )
+            ? recommendedData
+            : []
+        );
+
+        setSuggestedBooks(
+          Array.isArray(
+            suggestedData
+          )
+            ? suggestedData
+            : []
+        );
+      } catch (fetchError) {
+        console.error(
+          "Failed to fetch books:",
+          fetchError
+        );
+
+        if (!isCancelled) {
+          setSelectedBook(null);
+          setRecommendedBooks([]);
+          setSuggestedBooks([]);
+          setError(
+            "Unable to load your books. Please try again."
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
     fetchBooks();
+
+    return () => {
+      isCancelled = true;
+    };
   }, []);
 
   if (loading) {
@@ -48,9 +128,38 @@ function ForYou() {
           <div className="skeleton skeleton__selected"></div>
 
           <div className="skeleton__grid">
-            {new Array(6).fill(0).map((_, index) => (
-              <div className="skeleton skeleton__book" key={index}></div>
-            ))}
+            {new Array(6)
+              .fill(0)
+              .map((_, index) => (
+                <div
+                  className="skeleton skeleton__book"
+                  key={index}
+                ></div>
+              ))}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (error) {
+    return (
+      <main className="for-you">
+        <div className="books__container">
+          <div className="library__empty">
+            <h1>Unable to load books</h1>
+
+            <p>{error}</p>
+
+            <button
+              type="button"
+              className="book-page__button"
+              onClick={() =>
+                window.location.reload()
+              }
+            >
+              Try Again
+            </button>
           </div>
         </div>
       </main>
@@ -60,11 +169,11 @@ function ForYou() {
   return (
     <main className="for-you">
       <div className="books__container">
-        {/* SELECTED BOOK */}
-
         {selectedBook && (
           <section className="selected-book">
-            <Link to={`/book/${selectedBook.id}`}>
+            <Link
+              to={`/book/${selectedBook.id}`}
+            >
               <div className="selected-book__image-wrapper">
                 {selectedBook.subscriptionRequired && (
                   <span className="book-card__premium">
@@ -79,82 +188,129 @@ function ForYou() {
               </div>
 
               <div className="selected-book__content">
-                <h1>{selectedBook.title}</h1>
+                <h1>
+                  {selectedBook.title}
+                </h1>
 
-                <p>{selectedBook.author}</p>
+                <p>
+                  {selectedBook.author}
+                </p>
 
-                <p>{selectedBook.subTitle}</p>
+                {selectedBook.subTitle && (
+                  <p>
+                    {selectedBook.subTitle}
+                  </p>
+                )}
               </div>
             </Link>
           </section>
         )}
 
-        {/* RECOMMENDED */}
-
         <section className="book-section">
-          <h2>Recommended For You</h2>
+          <h2>
+            Recommended For You
+          </h2>
 
-          <div className="book-grid">
-            {recommendedBooks.map((book) => (
-              <Link
-                to={`/book/${book.id}`}
-                className="book-card"
-                key={book.id}
-              >
-                <div className="book-card__image-wrapper">
-                  {book.subscriptionRequired && (
-                    <span className="book-card__premium">
-                      Premium
-                    </span>
-                  )}
+          {recommendedBooks.length > 0 ? (
+            <div className="book-grid">
+              {recommendedBooks.map(
+                (book) => (
+                  <Link
+                    to={`/book/${book.id}`}
+                    className="book-card"
+                    key={book.id}
+                  >
+                    <div className="book-card__image-wrapper">
+                      {book.subscriptionRequired && (
+                        <span className="book-card__premium">
+                          Premium
+                        </span>
+                      )}
 
-                  <img
-                    src={book.imageLink}
-                    alt={book.title}
-                    className="book-card__image"
-                  />
-                </div>
+                      <img
+                        src={
+                          book.imageLink
+                        }
+                        alt={
+                          book.title
+                        }
+                        className="book-card__image"
+                      />
+                    </div>
 
-                <h3>{book.title}</h3>
+                    <h3>
+                      {book.title}
+                    </h3>
 
-                <p>{book.author}</p>
-              </Link>
-            ))}
-          </div>
+                    <p>
+                      {book.author}
+                    </p>
+                  </Link>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <p>
+                No recommended books
+                are available right
+                now.
+              </p>
+            </div>
+          )}
         </section>
 
-        {/* SUGGESTED */}
-
         <section className="book-section">
-          <h2>Suggested For You</h2>
+          <h2>
+            Suggested For You
+          </h2>
 
-          <div className="book-grid">
-            {suggestedBooks.map((book) => (
-              <Link
-                to={`/book/${book.id}`}
-                className="book-card"
-                key={book.id}
-              >
-                <div className="book-card__image-wrapper">
-                  {book.subscriptionRequired && (
-                    <span className="book-card__premium">
-                      Premium
-                    </span>
-                  )}
+          {suggestedBooks.length > 0 ? (
+            <div className="book-grid">
+              {suggestedBooks.map(
+                (book) => (
+                  <Link
+                    to={`/book/${book.id}`}
+                    className="book-card"
+                    key={book.id}
+                  >
+                    <div className="book-card__image-wrapper">
+                      {book.subscriptionRequired && (
+                        <span className="book-card__premium">
+                          Premium
+                        </span>
+                      )}
 
-                  <img
-                    src={book.imageLink}
-                    alt={book.title}
-                    className="book-card__image"
-                  />
-                </div>
+                      <img
+                        src={
+                          book.imageLink
+                        }
+                        alt={
+                          book.title
+                        }
+                        className="book-card__image"
+                      />
+                    </div>
 
-                <h3>{book.title}</h3>
+                    <h3>
+                      {book.title}
+                    </h3>
 
-                <p>{book.author}</p>
-              </Link>
-            ))}
-          </div>
+                    <p>
+                      {book.author}
+                    </p>
+                  </Link>
+                )
+              )}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <p>
+                No suggested books are
+                available right now.
+              </p>
+            </div>
+          )}
         </section>
       </div>
     </main>

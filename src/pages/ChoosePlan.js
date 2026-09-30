@@ -1,4 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   getFunctions,
@@ -10,14 +15,23 @@ import AuthModal from "../components/AuthModal";
 import { getSubscription } from "../utils/subscription";
 
 function ChoosePlan() {
-  const { currentUser } = useAuth();
+  const {
+    currentUser,
+    isAuthenticated,
+  } = useAuth();
 
-  const [isAnnual, setIsAnnual] = useState(false);
-  const [openSection, setOpenSection] = useState(null);
+  const [isAnnual, setIsAnnual] =
+    useState(false);
+
+  const [openSection, setOpenSection] =
+    useState(null);
+
   const [showAuthModal, setShowAuthModal] =
     useState(false);
+
   const [isCheckingOut, setIsCheckingOut] =
     useState(false);
+
   const [checkoutError, setCheckoutError] =
     useState("");
 
@@ -30,12 +44,17 @@ function ChoosePlan() {
       trialEnd: null,
     });
 
-  const [loadingSubscription, setLoadingSubscription] =
-    useState(true);
+  const [
+    loadingSubscription,
+    setLoadingSubscription,
+  ] = useState(true);
 
-  const loadSubscription = useCallback(
-    async () => {
-      if (!currentUser) {
+  const loadSubscription =
+    useCallback(async () => {
+      if (
+        !currentUser ||
+        !isAuthenticated
+      ) {
         setSubscription({
           plan: "basic",
           status: "inactive",
@@ -60,15 +79,19 @@ function ChoosePlan() {
           plan:
             userSubscription?.plan ||
             "basic",
+
           status:
             userSubscription?.status ||
             "inactive",
+
           cancelAtPeriodEnd:
             userSubscription?.cancelAtPeriodEnd ||
             false,
+
           currentPeriodEnd:
             userSubscription?.currentPeriodEnd ||
             null,
+
           trialEnd:
             userSubscription?.trialEnd ||
             null,
@@ -78,12 +101,21 @@ function ChoosePlan() {
           "Failed to load subscription:",
           error
         );
+
+        setSubscription({
+          plan: "basic",
+          status: "inactive",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+          trialEnd: null,
+        });
       } finally {
         setLoadingSubscription(false);
       }
-    },
-    [currentUser]
-  );
+    }, [
+      currentUser,
+      isAuthenticated,
+    ]);
 
   useEffect(() => {
     loadSubscription();
@@ -108,23 +140,33 @@ function ChoosePlan() {
   }, [loadSubscription]);
 
   const isPremium =
+    isAuthenticated &&
     subscription.plan === "premium" &&
-    (subscription.status === "trialing" ||
-      subscription.status === "active");
+    (
+      subscription.status ===
+        "trialing" ||
+      subscription.status ===
+        "active"
+    );
 
   const isTrialing =
     isPremium &&
-    subscription.status === "trialing";
+    subscription.status ===
+      "trialing";
 
   const isActive =
     isPremium &&
-    subscription.status === "active";
+    subscription.status ===
+      "active";
 
   const isCanceled =
-    subscription.status === "canceled";
+    subscription.status ===
+    "canceled";
 
   const isPastDue =
-    subscription.status === "past_due";
+    isAuthenticated &&
+    subscription.status ===
+      "past_due";
 
   const formatDate = (timestamp) => {
     if (!timestamp) {
@@ -135,7 +177,9 @@ function ChoosePlan() {
       timestamp * 1000
     );
 
-    if (Number.isNaN(date.getTime())) {
+    if (
+      Number.isNaN(date.getTime())
+    ) {
       return "";
     }
 
@@ -149,34 +193,38 @@ function ChoosePlan() {
     );
   };
 
-  const getTrialDaysRemaining = () => {
-    if (!subscription.trialEnd) {
-      return null;
-    }
+  const getTrialDaysRemaining =
+    () => {
+      if (!subscription.trialEnd) {
+        return null;
+      }
 
-    const now = Date.now();
+      const now = Date.now();
 
-    const trialEnd =
-      Number(subscription.trialEnd) *
-      1000;
+      const trialEnd =
+        Number(
+          subscription.trialEnd
+        ) * 1000;
 
-    const difference =
-      trialEnd - now;
+      const difference =
+        trialEnd - now;
 
-    if (difference <= 0) {
-      return 0;
-    }
+      if (difference <= 0) {
+        return 0;
+      }
 
-    return Math.ceil(
-      difference /
-        (1000 * 60 * 60 * 24)
-    );
-  };
+      return Math.ceil(
+        difference /
+          (1000 * 60 * 60 * 24)
+      );
+    };
 
   const trialDaysRemaining =
     getTrialDaysRemaining();
 
-  const toggleSection = (section) => {
+  const toggleSection = (
+    section
+  ) => {
     setOpenSection(
       openSection === section
         ? null
@@ -184,59 +232,70 @@ function ChoosePlan() {
     );
   };
 
-  const handleUpgrade = async () => {
-    if (!currentUser) {
-      setShowAuthModal(true);
-      return;
-    }
-
-    if (isPremium) {
-      return;
-    }
-
-    setCheckoutError("");
-    setIsCheckingOut(true);
-
-    try {
-      const functions = getFunctions();
-
-      const createCheckoutSession =
-        httpsCallable(
-          functions,
-          "createCheckoutSession"
-        );
-
-      const result =
-        await createCheckoutSession({
-          billingPeriod: isAnnual
-            ? "yearly"
-            : "monthly",
-        });
-
-      const checkoutUrl =
-        result.data?.url;
-
-      if (!checkoutUrl) {
-        throw new Error(
-          "Stripe checkout URL was not returned."
-        );
+  const handleUpgrade =
+    async () => {
+      if (
+        !isAuthenticated ||
+        !currentUser
+      ) {
+        setShowAuthModal(true);
+        return;
       }
 
-      window.location.href =
-        checkoutUrl;
-    } catch (error) {
-      console.error(
-        "Failed to start Stripe checkout:",
-        error
-      );
+      if (isPremium) {
+        return;
+      }
 
-      setCheckoutError(
-        "Unable to start checkout. Please try again."
-      );
+      setCheckoutError("");
+      setIsCheckingOut(true);
 
-      setIsCheckingOut(false);
-    }
-  };
+      try {
+        const functions =
+          getFunctions();
+
+        const createCheckoutSession =
+          httpsCallable(
+            functions,
+            "createCheckoutSession"
+          );
+
+        const result =
+          await createCheckoutSession({
+            billingPeriod:
+              isAnnual
+                ? "yearly"
+                : "monthly",
+          });
+
+        const checkoutUrl =
+          result.data?.url;
+
+        if (!checkoutUrl) {
+          throw new Error(
+            "Stripe checkout URL was not returned."
+          );
+        }
+
+        window.location.href =
+          checkoutUrl;
+      } catch (error) {
+        console.error(
+          "Failed to start Stripe checkout:",
+          error
+        );
+
+        setCheckoutError(
+          "Unable to start checkout. Please try again."
+        );
+
+        setIsCheckingOut(false);
+      }
+    };
+
+  const premiumTrialText =
+    isAnnual
+      ? "Includes a 7-day free trial"
+      : "Billed monthly with no free trial";
 
   return (
     <main className="choose-plan-page">
@@ -249,7 +308,9 @@ function ChoosePlan() {
         </Link>
 
         <div className="choose-plan-page__header">
-          <h1>Choose your plan</h1>
+          <h1>
+            Choose your plan
+          </h1>
 
           <p>
             Unlock unlimited access to
@@ -258,7 +319,7 @@ function ChoosePlan() {
           </p>
         </div>
 
-        {currentUser &&
+        {isAuthenticated &&
           !loadingSubscription && (
             <div className="plan-status">
               <div>
@@ -357,8 +418,8 @@ function ChoosePlan() {
             </h2>
 
             <p>
-              You currently have access to
-              Premium features.
+              You currently have access
+              to Premium features.
             </p>
 
             {subscription.trialEnd && (
@@ -381,7 +442,8 @@ function ChoosePlan() {
                 </strong>
 
                 <span>
-                  {trialDaysRemaining === 1
+                  {trialDaysRemaining ===
+                  1
                     ? "day remaining"
                     : "days remaining"}
                 </span>
@@ -401,8 +463,8 @@ function ChoosePlan() {
               </strong>
 
               <p>
-                Your Premium access remains
-                active until{" "}
+                Your Premium access
+                remains active until{" "}
                 <strong>
                   {formatDate(
                     subscription.currentPeriodEnd
@@ -413,7 +475,8 @@ function ChoosePlan() {
 
               <p>
                 You can manage your
-                subscription from Settings.
+                subscription from
+                Settings.
               </p>
             </div>
           )}
@@ -430,9 +493,9 @@ function ChoosePlan() {
             <p>
               There is an issue with your
               Premium subscription payment.
-              Manage your subscription from
-              Settings to review your billing
-              information.
+              Manage your subscription
+              from Settings to review
+              your billing information.
             </p>
           </div>
         )}
@@ -486,7 +549,10 @@ function ChoosePlan() {
 
             <div className="plan-card__price">
               <strong>$0</strong>
-              <span>/ month</span>
+
+              <span>
+                / month
+              </span>
             </div>
 
             <ul className="plan-card__features">
@@ -542,7 +608,7 @@ function ChoosePlan() {
 
             {!isPremium && (
               <p className="plan-card__trial">
-                Includes a 7-day free trial
+                {premiumTrialText}
               </p>
             )}
 
@@ -581,7 +647,9 @@ function ChoosePlan() {
                 ? "Opening checkout..."
                 : isPremium
                   ? "Current plan"
-                  : "Start Free Trial"}
+                  : isAnnual
+                    ? "Start 7-Day Free Trial"
+                    : "Subscribe Monthly"}
             </button>
 
             {checkoutError && (
@@ -680,9 +748,11 @@ function ChoosePlan() {
 
             {openSection === 3 && (
               <p>
-                Premium includes a 7-day
-                free trial before the
-                subscription begins billing.
+                The yearly Premium
+                subscription includes a
+                7-day free trial. The
+                monthly subscription does
+                not include a free trial.
               </p>
             )}
           </div>

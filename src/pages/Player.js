@@ -1,253 +1,222 @@
-import { useEffect, useRef, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { getFunctions, httpsCallable } from "firebase/functions";
+import {
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import {
+  Link,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import {
   get,
   ref,
-  set,
+  update,
 } from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
+import { isPremiumUser } from "../utils/subscription";
+
+const BOOK_API =
+  "https://us-central1-summaristt.cloudfunctions.net/getBook";
 
 function Player() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { currentUser } = useAuth();
+
+  const {
+    currentUser,
+    isAuthenticated,
+    loading: authLoading,
+  } = useAuth();
 
   const audioRef = useRef(null);
-  const progressSaveTimeoutRef = useRef(null);
-  const hasLoadedSavedProgressRef = useRef(false);
 
   const [book, setBook] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading] =
+    useState(true);
+  const [error, setError] =
+    useState("");
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-
-  const [savedProgress, setSavedProgress] = useState(0);
-  const [isFinished, setIsFinished] = useState(false);
-
-  const [playbackRate, setPlaybackRate] = useState(1);
-  const [isSavingProgress, setIsSavingProgress] =
+  const [isPlaying, setIsPlaying] =
     useState(false);
 
-  useEffect(() => {
-    hasLoadedSavedProgressRef.current = false;
-    setSavedProgress(0);
-    setCurrentTime(0);
-    setDuration(0);
-    setIsFinished(false);
-  }, [id]);
+  const [currentTime, setCurrentTime] =
+    useState(0);
+
+  const [duration, setDuration] =
+    useState(0);
+
+  const [checkingAccess, setCheckingAccess] =
+    useState(true);
 
   useEffect(() => {
-    const fetchBook = async () => {
+    let isCancelled = false;
+
+    const loadBook = async () => {
       if (!id) {
-        setError("Book not found.");
+        setError(
+          "No book was selected."
+        );
         setLoading(false);
+        setCheckingAccess(false);
         return;
       }
 
       setLoading(true);
+      setCheckingAccess(true);
       setError("");
+      setBook(null);
+      setIsPlaying(false);
+      setCurrentTime(0);
+      setDuration(0);
 
       try {
-        const functions = getFunctions();
+        const response = await fetch(
+          `${BOOK_API}?id=${encodeURIComponent(
+            id
+          )}`
+        );
 
-        const getProtectedBook =
-          httpsCallable(
-            functions,
-            "getProtectedBook"
-          );
-
-        const result = await getProtectedBook({
-          bookId: id,
-        });
-
-        const protectedBook =
-          result.data?.book || result.data;
-
-        if (!protectedBook) {
+        if (!response.ok) {
           throw new Error(
-            "Book information was not returned."
+            "Unable to load this book."
           );
         }
 
-        setBook(protectedBook);
-      } catch (error) {
+        const data =
+          await response.json();
+
+        if (
+          !data ||
+          typeof data !== "object"
+        ) {
+          throw new Error(
+            "The book data was invalid."
+          );
+        }
+
+        if (!isCancelled) {
+          setBook(data);
+        }
+      } catch (loadError) {
         console.error(
-          "Failed to load protected book:",
-          error
+          "Failed to load player:",
+          loadError
         );
 
-        setError(
-          error?.message ||
-            "Unable to load this book."
-        );
+        if (!isCancelled) {
+          setError(
+            "Unable to load this book. Please try again."
+          );
+        }
       } finally {
-        setLoading(false);
+        if (!isCancelled) {
+          setLoading(false);
+        }
       }
     };
 
-    fetchBook();
+    loadBook();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [id]);
 
   useEffect(() => {
-    const loadSavedProgress = async () => {
-      if (!currentUser || !id) {
-        hasLoadedSavedProgressRef.current = true;
+    if (
+      authLoading ||
+      loading ||
+      !book
+    ) {
+      return;
+    }
+
+    let isCancelled = false;
+
+    const checkAccess = async () => {
+      setCheckingAccess(true);
+
+      if (
+        !currentUser ||
+        !isAuthenticated
+      ) {
+        if (!isCancelled) {
+          navigate(`/book/${id}`, {
+            replace: true,
+          });
+        }
+
+        return;
+      }
+
+      if (!book.subscriptionRequired) {
+        if (!isCancelled) {
+          setCheckingAccess(false);
+        }
+
         return;
       }
 
       try {
-        const bookRef = ref(
-          database,
-          `users/${currentUser.uid}/library/${id}`
-        );
+        const premium =
+          await isPremiumUser(
+            currentUser.uid
+          );
 
-        const snapshot = await get(bookRef);
-
-        if (!snapshot.exists()) {
-          hasLoadedSavedProgressRef.current = true;
+        if (isCancelled) {
           return;
         }
 
-        const libraryBook = snapshot.val();
+        if (!premium) {
+          navigate("/choose-plan", {
+            replace: true,
+          });
 
-        const progress = Number(
-          libraryBook.progress
-        );
-
-        const savedDuration = Number(
-          libraryBook.duration
-        );
-
-        if (
-          Number.isFinite(progress) &&
-          progress > 0
-        ) {
-          setSavedProgress(progress);
+          return;
         }
 
-        if (
-          Number.isFinite(savedDuration) &&
-          savedDuration > 0
-        ) {
-          setDuration(savedDuration);
-        }
-
-        setIsFinished(
-          libraryBook.finished === true
-        );
-      } catch (error) {
+        setCheckingAccess(false);
+      } catch (accessError) {
         console.error(
-          "Failed to load saved progress:",
-          error
+          "Failed to check player access:",
+          accessError
         );
-      } finally {
-        hasLoadedSavedProgressRef.current = true;
+
+        if (!isCancelled) {
+          navigate("/choose-plan", {
+            replace: true,
+          });
+        }
       }
     };
 
-    loadSavedProgress();
-  }, [currentUser, id]);
+    checkAccess();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [
+    authLoading,
+    loading,
+    book,
+    currentUser,
+    isAuthenticated,
+    id,
+    navigate,
+  ]);
 
   useEffect(() => {
     return () => {
-      if (
-        progressSaveTimeoutRef.current
-      ) {
-        clearTimeout(
-          progressSaveTimeoutRef.current
-        );
+      const audio = audioRef.current;
+
+      if (audio) {
+        audio.pause();
       }
     };
-  }, []);
-
-  const saveProgress = async (
-    progressValue,
-    finished = false
-  ) => {
-    if (!currentUser || !id) {
-      return;
-    }
-
-    const progress = Number(
-      progressValue
-    );
-
-    const audioDuration = Number(
-      duration || audioRef.current?.duration
-    );
-
-    if (
-      !Number.isFinite(progress) ||
-      progress < 0
-    ) {
-      return;
-    }
-
-    try {
-      setIsSavingProgress(true);
-
-      const bookRef = ref(
-        database,
-        `users/${currentUser.uid}/library/${id}`
-      );
-
-      const snapshot = await get(bookRef);
-
-      if (!snapshot.exists()) {
-        return;
-      }
-
-      const libraryBook = snapshot.val();
-
-      await set(bookRef, {
-        ...libraryBook,
-        progress,
-        duration:
-          Number.isFinite(audioDuration) &&
-          audioDuration > 0
-            ? audioDuration
-            : libraryBook.duration ||
-              null,
-        finished,
-        ...(finished
-          ? {
-              finishedAt: Date.now(),
-            }
-          : {}),
-        lastPlayedAt: Date.now(),
-      });
-    } catch (error) {
-      console.error(
-        "Failed to save playback progress:",
-        error
-      );
-    } finally {
-      setIsSavingProgress(false);
-    }
-  };
-
-  const scheduleProgressSave = (
-    progressValue
-  ) => {
-    if (
-      progressSaveTimeoutRef.current
-    ) {
-      clearTimeout(
-        progressSaveTimeoutRef.current
-      );
-    }
-
-    progressSaveTimeoutRef.current =
-      setTimeout(() => {
-        saveProgress(progressValue);
-      }, 1000);
-  };
+  }, [id]);
 
   const handleLoadedMetadata = () => {
     const audio = audioRef.current;
@@ -256,35 +225,11 @@ function Player() {
       return;
     }
 
-    const audioDuration = audio.duration;
-
     if (
-      Number.isFinite(audioDuration) &&
-      audioDuration > 0
+      Number.isFinite(audio.duration) &&
+      audio.duration > 0
     ) {
-      setDuration(audioDuration);
-
-      if (
-        currentUser &&
-        id &&
-        hasLoadedSavedProgressRef.current
-      ) {
-        const resumePosition =
-          Number(savedProgress);
-
-        if (
-          resumePosition > 0 &&
-          resumePosition < audioDuration &&
-          !isFinished
-        ) {
-          audio.currentTime =
-            resumePosition;
-
-          setCurrentTime(
-            resumePosition
-          );
-        }
-      }
+      setDuration(audio.duration);
     }
   };
 
@@ -295,19 +240,23 @@ function Player() {
       return;
     }
 
-    const time = audio.currentTime;
-
-    setCurrentTime(time);
-
-    if (
-      currentUser &&
-      !isFinished
-    ) {
-      scheduleProgressSave(time);
-    }
+    setCurrentTime(
+      audio.currentTime
+    );
   };
 
-  const handlePlay = async () => {
+  const handleAudioError = () => {
+    console.error(
+      "Audio failed to load:",
+      book?.audioLink
+    );
+
+    setError(
+      "The book loaded, but its audio could not be played."
+    );
+  };
+
+  const handlePlayPause = async () => {
     const audio = audioRef.current;
 
     if (!audio) {
@@ -315,49 +264,29 @@ function Player() {
     }
 
     try {
-      await audio.play();
-      setIsPlaying(true);
-    } catch (error) {
+      if (audio.paused) {
+        await audio.play();
+      } else {
+        audio.pause();
+      }
+    } catch (playError) {
       console.error(
-        "Unable to play audio:",
-        error
+        "Playback failed:",
+        playError
+      );
+
+      setError(
+        "The audio could not be played. Please try again."
       );
     }
   };
 
-  const handlePause = async () => {
+  const handleStop = () => {
     const audio = audioRef.current;
 
     if (!audio) {
       return;
     }
-
-    audio.pause();
-    setIsPlaying(false);
-
-    await saveProgress(
-      audio.currentTime
-    );
-  };
-
-  const handleTogglePlay = () => {
-    if (isPlaying) {
-      handlePause();
-    } else {
-      handlePlay();
-    }
-  };
-
-  const handleStop = async () => {
-    const audio = audioRef.current;
-
-    if (!audio) {
-      return;
-    }
-
-    await saveProgress(
-      audio.currentTime
-    );
 
     audio.pause();
     audio.currentTime = 0;
@@ -373,18 +302,22 @@ function Player() {
       return;
     }
 
+    const maxTime =
+      Number.isFinite(audio.duration) &&
+      audio.duration > 0
+        ? audio.duration
+        : 0;
+
     const newTime = Math.min(
       Math.max(
         audio.currentTime + seconds,
         0
       ),
-      audio.duration || 0
+      maxTime
     );
 
     audio.currentTime = newTime;
     setCurrentTime(newTime);
-
-    scheduleProgressSave(newTime);
   };
 
   const handleSeek = (event) => {
@@ -404,187 +337,169 @@ function Player() {
 
     audio.currentTime = newTime;
     setCurrentTime(newTime);
-
-    scheduleProgressSave(newTime);
   };
 
-  const handlePlaybackRateChange = (
-    event
-  ) => {
-    const newRate = Number(
-      event.target.value
-    );
+  const markBookAsFinished =
+    async () => {
+      if (
+        !currentUser ||
+        !isAuthenticated ||
+        !id
+      ) {
+        return;
+      }
 
-    const audio = audioRef.current;
+      try {
+        const libraryRef = ref(
+          database,
+          `users/${currentUser.uid}/library/${String(
+            id
+          )}`
+        );
 
-    if (
-      !audio ||
-      !Number.isFinite(newRate)
-    ) {
-      return;
-    }
+        const snapshot =
+          await get(libraryRef);
 
-    audio.playbackRate = newRate;
-    setPlaybackRate(newRate);
-  };
+        if (!snapshot.exists()) {
+          return;
+        }
+
+        await update(libraryRef, {
+          finished: true,
+          finishedAt: Date.now(),
+        });
+      } catch (finishError) {
+        console.error(
+          "Failed to mark book as finished:",
+          finishError
+        );
+      }
+    };
 
   const handleEnded = async () => {
-    const audio = audioRef.current;
-
     setIsPlaying(false);
-    setCurrentTime(
-      audio?.duration || duration
-    );
-    setIsFinished(true);
+    setCurrentTime(duration);
 
-    await saveProgress(
-      audio?.duration || duration,
-      true
-    );
+    await markBookAsFinished();
   };
-
-  const handleBeforeUnload = () => {
-    const audio = audioRef.current;
-
-    if (
-      !audio ||
-      !currentUser ||
-      !id
-    ) {
-      return;
-    }
-
-    const progress = audio.currentTime;
-
-    if (
-      !Number.isFinite(progress) ||
-      progress <= 0
-    ) {
-      return;
-    }
-
-    saveProgress(progress);
-  };
-
-  useEffect(() => {
-    window.addEventListener(
-      "beforeunload",
-      handleBeforeUnload
-    );
-
-    return () => {
-      window.removeEventListener(
-        "beforeunload",
-        handleBeforeUnload
-      );
-    };
-  });
 
   const formatTime = (time) => {
     const value = Number(time);
 
     if (
       !Number.isFinite(value) ||
-      value <= 0
+      value < 0
     ) {
       return "0:00";
     }
 
-    const hours = Math.floor(
-      value / 3600
-    );
-
     const minutes = Math.floor(
-      (value % 3600) / 60
+      value / 60
     );
 
     const seconds = Math.floor(
       value % 60
     );
 
-    if (hours > 0) {
-      return `${hours}:${minutes
-        .toString()
-        .padStart(2, "0")}:${seconds
-        .toString()
-        .padStart(2, "0")}`;
-    }
-
     return `${minutes}:${seconds
       .toString()
       .padStart(2, "0")}`;
   };
 
-  const handleBack = async () => {
-    const audio = audioRef.current;
-
-    if (
-      audio &&
-      currentUser &&
-      !isFinished
-    ) {
-      await saveProgress(
-        audio.currentTime
-      );
-    }
-
-    if (id) {
-      navigate(`/book/${id}`);
-      return;
-    }
-
-    navigate(-1);
-  };
-
-  if (loading) {
+  if (
+    authLoading ||
+    loading ||
+    checkingAccess
+  ) {
     return (
       <main className="player">
         <div className="player__container">
           <div className="player__loading">
-            Loading book...
+            <div className="skeleton player__loading-image"></div>
+
+            <div className="player__loading-info">
+              <div className="skeleton player__loading-title"></div>
+
+              <div className="skeleton player__loading-author"></div>
+
+              <div className="skeleton player__loading-text"></div>
+            </div>
           </div>
         </div>
       </main>
     );
   }
 
-  if (error || !book) {
+  if (error) {
     return (
       <main className="player">
         <div className="player__container">
-          <button
-            type="button"
-            className="player__back"
-            onClick={() =>
-              navigate(
-                id
-                  ? `/book/${id}`
-                  : "/library"
-              )
-            }
-          >
-            ← Back to Book
-          </button>
-
           <div className="player__error">
             <h1>
-              Unable to load this book
+              Unable to play this book
             </h1>
 
-            <p>
-              {error ||
-                "The book could not be loaded."}
-            </p>
+            <p>{error}</p>
+
+            <div className="player__actions">
+              <Link
+                to={`/book/${id}`}
+                className="book-page__button"
+              >
+                Back to Book
+              </Link>
+
+              <Link
+                to="/for-you"
+                className="book-page__button book-page__button--secondary"
+              >
+                Back to For You
+              </Link>
+            </div>
           </div>
         </div>
       </main>
     );
   }
 
-  const audioUrl =
-    book.audioLink ||
-    book.audioUrl ||
-    book.audio;
+  if (!book) {
+    return (
+      <main className="player">
+        <div className="player__container">
+          <div className="player__error">
+            <h1>
+              Book data unavailable
+            </h1>
+
+            <p>
+              The player loaded, but no
+              book information was
+              returned.
+            </p>
+
+            <button
+              type="button"
+              className="book-page__button"
+              onClick={() =>
+                navigate(-1)
+              }
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const audioSource =
+    book.audioLink || "";
+
+  const summary =
+    book.bookDescription ||
+    book.description ||
+    book.summary ||
+    "No summary available for this book.";
 
   return (
     <main className="player">
@@ -592,207 +507,170 @@ function Player() {
         <button
           type="button"
           className="player__back"
-          onClick={handleBack}
+          onClick={() =>
+            navigate(-1)
+          }
         >
-          ← Back to Book
+          ← Back
         </button>
 
         <div className="player__content">
-          <div className="player__book">
-            {book.imageLink && (
-              <img
-                src={book.imageLink}
-                alt={book.title}
-                className="player__image"
-              />
-            )}
-
-            <div className="player__info">
-              <h1>{book.title}</h1>
-
-              {book.author && (
-                <p className="player__author">
-                  {book.author}
-                </p>
-              )}
-
-              {book.subTitle && (
-                <p className="player__subtitle">
-                  {book.subTitle}
-                </p>
-              )}
-
-              {book.description && (
-                <div className="player__description">
-                  <h2>Summary</h2>
-
-                  <p>
-                    {book.description}
-                  </p>
-                </div>
-              )}
-            </div>
+          <div className="player__image-wrapper">
+            <img
+              src={book.imageLink}
+              alt={
+                book.title || "Book"
+              }
+              className="player__image"
+            />
           </div>
 
-          <section
-            className="player__controls"
-            aria-label="Audio player controls"
-          >
-            {audioUrl ? (
-              <audio
-                ref={audioRef}
-                src={audioUrl}
-                onLoadedMetadata={
-                  handleLoadedMetadata
-                }
-                onTimeUpdate={
-                  handleTimeUpdate
-                }
-                onEnded={handleEnded}
-                preload="metadata"
-              />
-            ) : (
-              <p className="player__error">
-                Audio is not available for
-                this book.
-              </p>
-            )}
+          <div className="player__info">
+            <p className="player__label">
+              Now Playing
+            </p>
 
-            <div className="player__progress">
-              <input
-                type="range"
-                min="0"
-                max={duration || 0}
-                step="0.1"
-                value={Math.min(
-                  currentTime,
-                  duration || 0
-                )}
-                onChange={handleSeek}
-                disabled={!audioUrl}
-                aria-label="Audio progress"
-              />
+            <h1>{book.title}</h1>
 
-              <div className="player__time">
-                <span>
-                  {formatTime(currentTime)}
-                </span>
+            <p className="player__author">
+              {book.author}
+            </p>
 
-                <span>
-                  {formatTime(duration)}
-                </span>
-              </div>
-            </div>
+            <div className="player__audio">
+              {!audioSource ? (
+                <div className="player__audio-error">
+                  <strong>
+                    Audio unavailable
+                  </strong>
 
-            <div className="player__buttons">
-              <button
-                type="button"
-                onClick={() =>
-                  handleSkip(-15)
-                }
-                disabled={!audioUrl}
-                aria-label="Skip backward 15 seconds"
-              >
-                −15
-              </button>
-
-              <button
-                type="button"
-                className="player__play"
-                onClick={handleTogglePlay}
-                disabled={!audioUrl}
-                aria-label={
-                  isPlaying
-                    ? "Pause"
-                    : "Play"
-                }
-              >
-                {isPlaying
-                  ? "Pause"
-                  : "Play"}
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  handleSkip(15)
-                }
-                disabled={!audioUrl}
-                aria-label="Skip forward 15 seconds"
-              >
-                +15
-              </button>
-
-              <button
-                type="button"
-                onClick={handleStop}
-                disabled={!audioUrl}
-              >
-                Stop
-              </button>
-            </div>
-
-            <div className="player__speed">
-              <label htmlFor="playback-speed">
-                Playback speed
-              </label>
-
-              <select
-                id="playback-speed"
-                value={playbackRate}
-                onChange={
-                  handlePlaybackRateChange
-                }
-                disabled={!audioUrl}
-              >
-                <option value="0.75">
-                  0.75x
-                </option>
-
-                <option value="1">
-                  1x
-                </option>
-
-                <option value="1.25">
-                  1.25x
-                </option>
-
-                <option value="1.5">
-                  1.5x
-                </option>
-
-                <option value="1.75">
-                  1.75x
-                </option>
-
-                <option value="2">
-                  2x
-                </option>
-              </select>
-            </div>
-
-            {isSavingProgress && (
-              <div className="player__saving">
-                Saving progress...
-              </div>
-            )}
-
-            {savedProgress > 0 &&
-              currentTime === 0 &&
-              !isFinished && (
-                <div className="player__resume">
-                  Your previous position will
-                  be restored when the audio
-                  loads.
+                  <p>
+                    This book does not
+                    have an audio file
+                    available.
+                  </p>
                 </div>
-              )}
+              ) : (
+                <>
+                  <audio
+                    ref={audioRef}
+                    src={audioSource}
+                    preload="metadata"
+                    onLoadedMetadata={
+                      handleLoadedMetadata
+                    }
+                    onTimeUpdate={
+                      handleTimeUpdate
+                    }
+                    onEnded={
+                      handleEnded
+                    }
+                    onError={
+                      handleAudioError
+                    }
+                    onPlay={() =>
+                      setIsPlaying(
+                        true
+                      )
+                    }
+                    onPause={() =>
+                      setIsPlaying(
+                        false
+                      )
+                    }
+                  />
 
-            {isFinished && (
-              <div className="player__finished">
-                ✓ Finished
-              </div>
-            )}
-          </section>
+                  <div className="player__controls">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSkip(-15)
+                      }
+                      aria-label="Skip back 15 seconds"
+                    >
+                      -15
+                    </button>
+
+                    <button
+                      type="button"
+                      className="player__play"
+                      onClick={
+                        handlePlayPause
+                      }
+                      aria-label={
+                        isPlaying
+                          ? "Pause"
+                          : "Play"
+                      }
+                    >
+                      {isPlaying
+                        ? "❚❚"
+                        : "▶"}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleSkip(15)
+                      }
+                      aria-label="Skip forward 15 seconds"
+                    >
+                      +15
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={
+                        handleStop
+                      }
+                    >
+                      Stop
+                    </button>
+                  </div>
+
+                  <div className="player__progress-wrapper">
+                    <span className="player__time">
+                      {formatTime(
+                        currentTime
+                      )}
+                    </span>
+
+                    <input
+                      className="player__progress"
+                      type="range"
+                      min="0"
+                      max={
+                        duration || 0
+                      }
+                      step="0.1"
+                      value={Math.min(
+                        currentTime,
+                        duration || 0
+                      )}
+                      onChange={
+                        handleSeek
+                      }
+                      disabled={
+                        !duration
+                      }
+                      aria-label="Audio progress"
+                    />
+
+                    <span className="player__time">
+                      {formatTime(
+                        duration
+                      )}
+                    </span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="player__summary">
+              <h2>Summary</h2>
+
+              <p>{summary}</p>
+            </div>
+          </div>
         </div>
       </div>
     </main>

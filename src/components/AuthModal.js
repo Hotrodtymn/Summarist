@@ -1,6 +1,8 @@
+
 import { useState } from "react";
 import {
   createUserWithEmailAndPassword,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signInWithPopup,
   GoogleAuthProvider,
@@ -8,11 +10,15 @@ import {
 import { auth } from "../firebase";
 
 function AuthModal({ onClose }) {
-  const [isRegistering, setIsRegistering] = useState(false);
+  const [isRegistering, setIsRegistering] =
+    useState(false);
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+
   const [error, setError] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSubmitting, setIsSubmitting] =
+    useState(false);
 
   async function handleSubmit() {
     setError("");
@@ -52,9 +58,13 @@ function AuthModal({ onClose }) {
     setIsSubmitting(true);
 
     try {
-      const provider = new GoogleAuthProvider();
+      const provider =
+        new GoogleAuthProvider();
 
-      await signInWithPopup(auth, provider);
+      await signInWithPopup(
+        auth,
+        provider
+      );
 
       onClose();
     } catch (error) {
@@ -70,18 +80,49 @@ function AuthModal({ onClose }) {
     }
   }
 
+  async function handleGuestLogin() {
+    setError("");
+    setIsSubmitting(true);
+
+    try {
+      await signInAnonymously(auth);
+
+      onClose();
+    } catch (error) {
+      console.error(
+        "Guest authentication failed:",
+        error.code,
+        error.message
+      );
+
+      setError(
+        "Unable to continue as a guest. Please try again."
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   function toggleAuthMode() {
-    setIsRegistering(!isRegistering);
+    setIsRegistering(
+      !isRegistering
+    );
     setError("");
   }
 
   return (
-    <div className="auth-modal__overlay" onClick={onClose}>
+    <div
+      className="auth-modal__overlay"
+      onClick={onClose}
+    >
       <div
         className="auth-modal"
-        onClick={(event) => event.stopPropagation()}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
       >
         <button
+          type="button"
           className="auth-modal__close"
           onClick={onClose}
           aria-label="Close"
@@ -122,7 +163,9 @@ function AuthModal({ onClose }) {
           aria-label="Email"
           className="auth-modal__input"
           value={email}
-          onChange={(event) => setEmail(event.target.value)}
+          onChange={(event) =>
+            setEmail(event.target.value)
+          }
           disabled={isSubmitting}
         />
 
@@ -132,12 +175,17 @@ function AuthModal({ onClose }) {
           aria-label="Password"
           className="auth-modal__input"
           value={password}
-          onChange={(event) => setPassword(event.target.value)}
+          onChange={(event) =>
+            setPassword(event.target.value)
+          }
           disabled={isSubmitting}
         />
 
         {error && (
-          <p className="auth-modal__error" role="alert">
+          <p
+            className="auth-modal__error"
+            role="alert"
+          >
             {error}
           </p>
         )}
@@ -158,6 +206,17 @@ function AuthModal({ onClose }) {
               ? "Create account"
               : "Log in"}
         </button>
+
+        {!isRegistering && (
+          <button
+            type="button"
+            className="auth-modal__guest"
+            onClick={handleGuestLogin}
+            disabled={isSubmitting}
+          >
+            Continue as Guest
+          </button>
+        )}
 
         <button
           type="button"

@@ -1,4 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   getFunctions,
@@ -13,92 +17,101 @@ import { getSubscription } from "../utils/subscription";
 import { auth } from "../firebase";
 
 function Settings() {
-  const { currentUser } = useAuth();
+  const {
+    currentUser,
+    isAuthenticated,
+  } = useAuth();
 
   const [showAuthModal, setShowAuthModal] =
     useState(false);
 
-  const [subscription, setSubscription] = useState({
-    plan: "basic",
-    status: "inactive",
-    cancelAtPeriodEnd: false,
-    currentPeriodEnd: null,
-    trialEnd: null,
-  });
+  const [subscription, setSubscription] =
+    useState({
+      plan: "basic",
+      status: "inactive",
+      cancelAtPeriodEnd: false,
+      currentPeriodEnd: null,
+      trialEnd: null,
+    });
 
-  const [loadingSubscription, setLoadingSubscription] =
-    useState(true);
+  const [
+    loadingSubscription,
+    setLoadingSubscription,
+  ] = useState(true);
 
-  const [isManagingSubscription, setIsManagingSubscription] =
-    useState(false);
+  const [
+    isManagingSubscription,
+    setIsManagingSubscription,
+  ] = useState(false);
 
   const [isLoggingOut, setIsLoggingOut] =
     useState(false);
 
-  const [subscriptionError, setSubscriptionError] =
-    useState("");
+  const [
+    subscriptionError,
+    setSubscriptionError,
+  ] = useState("");
 
-  const handleLogout = async () => {
-    if (isLoggingOut) {
-      return;
-    }
+  const loadSubscription =
+    useCallback(async () => {
+      if (
+        !currentUser ||
+        !isAuthenticated
+      ) {
+        setSubscription({
+          plan: "basic",
+          status: "inactive",
+          cancelAtPeriodEnd: false,
+          currentPeriodEnd: null,
+          trialEnd: null,
+        });
 
-    setIsLoggingOut(true);
+        setLoadingSubscription(false);
+        return;
+      }
 
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Logout failed:", error);
-      setIsLoggingOut(false);
-    }
-  };
+      setLoadingSubscription(true);
+      setSubscriptionError("");
 
-  const loadSubscription = useCallback(async () => {
-    if (!currentUser) {
-      setSubscription({
-        plan: "basic",
-        status: "inactive",
-        cancelAtPeriodEnd: false,
-        currentPeriodEnd: null,
-        trialEnd: null,
-      });
+      try {
+        const userSubscription =
+          await getSubscription(
+            currentUser.uid
+          );
 
-      setLoadingSubscription(false);
-      return;
-    }
+        setSubscription({
+          plan:
+            userSubscription?.plan ||
+            "basic",
+          status:
+            userSubscription?.status ||
+            "inactive",
+          cancelAtPeriodEnd:
+            userSubscription?.cancelAtPeriodEnd ||
+            false,
+          currentPeriodEnd:
+            userSubscription?.currentPeriodEnd ||
+            null,
+          trialEnd:
+            userSubscription?.trialEnd ||
+            null,
+        });
+      } catch (error) {
+        console.error(
+          "Failed to load subscription:",
+          error
+        );
 
-    setLoadingSubscription(true);
-    setSubscriptionError("");
-
-    try {
-      const userSubscription =
-        await getSubscription(currentUser.uid);
-
-      setSubscription({
-        plan:
-          userSubscription?.plan || "basic",
-        status:
-          userSubscription?.status || "inactive",
-        cancelAtPeriodEnd:
-          userSubscription?.cancelAtPeriodEnd || false,
-        currentPeriodEnd:
-          userSubscription?.currentPeriodEnd || null,
-        trialEnd:
-          userSubscription?.trialEnd || null,
-      });
-    } catch (error) {
-      console.error(
-        "Failed to load subscription:",
-        error
-      );
-
-      setSubscriptionError(
-        "Unable to load your subscription status. Please try again."
-      );
-    } finally {
-      setLoadingSubscription(false);
-    }
-  }, [currentUser]);
+        setSubscriptionError(
+          "Unable to load your subscription status. Please try again."
+        );
+      } finally {
+        setLoadingSubscription(false);
+      }
+    }, [
+      currentUser,
+      isAuthenticated,
+    ]);
 
   useEffect(() => {
     loadSubscription();
@@ -122,13 +135,41 @@ function Settings() {
     };
   }, [loadSubscription]);
 
+  const handleLogout = async () => {
+    if (isLoggingOut) {
+      return;
+    }
+
+    setIsLoggingOut(true);
+
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error(
+        "Logout failed:",
+        error
+      );
+
+      setIsLoggingOut(false);
+    }
+  };
+
   const isPremium =
     subscription.plan === "premium" &&
     (subscription.status === "trialing" ||
       subscription.status === "active");
 
+  const isPremiumPlus =
+    subscription.plan ===
+      "premium-plus" &&
+    (subscription.status === "trialing" ||
+      subscription.status === "active");
+
+  const hasPremiumAccess =
+    isPremium || isPremiumPlus;
+
   const isTrialing =
-    isPremium &&
+    hasPremiumAccess &&
     subscription.status === "trialing";
 
   const formatSubscriptionDate = (
@@ -142,7 +183,9 @@ function Settings() {
       timestamp * 1000
     );
 
-    if (Number.isNaN(date.getTime())) {
+    if (
+      Number.isNaN(date.getTime())
+    ) {
       return "";
     }
 
@@ -156,33 +199,64 @@ function Settings() {
     );
   };
 
-  const getSubscriptionStatusLabel = () => {
-    if (subscription.cancelAtPeriodEnd) {
-      return "Cancellation scheduled";
+  const getPlanName = () => {
+    if (isPremiumPlus) {
+      return "Premium Plus";
     }
 
-    if (subscription.status === "trialing") {
-      return "Trial active";
+    if (isPremium) {
+      return "Premium";
     }
 
-    if (subscription.status === "active") {
-      return "Active";
-    }
-
-    if (subscription.status === "past_due") {
-      return "Payment required";
-    }
-
-    if (subscription.status === "canceled") {
-      return "Canceled";
-    }
-
-    return "Inactive";
+    return "Basic";
   };
+
+  const getSubscriptionStatusLabel =
+    () => {
+      if (
+        subscription.cancelAtPeriodEnd
+      ) {
+        return "Cancellation scheduled";
+      }
+
+      if (
+        subscription.status ===
+        "trialing"
+      ) {
+        return "Trial active";
+      }
+
+      if (
+        subscription.status ===
+        "active"
+      ) {
+        return "Active";
+      }
+
+      if (
+        subscription.status ===
+        "past_due"
+      ) {
+        return "Payment required";
+      }
+
+      if (
+        subscription.status ===
+        "canceled"
+      ) {
+        return "Canceled";
+      }
+
+      return "Inactive";
+    };
 
   const handleManageSubscription =
     async () => {
-      if (!currentUser || !isPremium) {
+      if (
+        !currentUser ||
+        !isAuthenticated ||
+        !hasPremiumAccess
+      ) {
         return;
       }
 
@@ -190,7 +264,8 @@ function Settings() {
       setIsManagingSubscription(true);
 
       try {
-        const functions = getFunctions();
+        const functions =
+          getFunctions();
 
         const createCustomerPortalSession =
           httpsCallable(
@@ -201,7 +276,8 @@ function Settings() {
         const result =
           await createCustomerPortalSession();
 
-        const portalUrl = result.data?.url;
+        const portalUrl =
+          result.data?.url;
 
         if (!portalUrl) {
           throw new Error(
@@ -209,7 +285,8 @@ function Settings() {
           );
         }
 
-        window.location.href = portalUrl;
+        window.location.href =
+          portalUrl;
       } catch (error) {
         console.error(
           "Failed to open subscription management:",
@@ -224,7 +301,11 @@ function Settings() {
       }
     };
 
-  if (!currentUser) {
+  /*
+   * Guests and logged-out users should
+   * both see the logged-out Settings page.
+   */
+  if (!isAuthenticated) {
     return (
       <main className="settings-page">
         <div className="settings-page__container">
@@ -235,11 +316,14 @@ function Settings() {
               className="settings-page__image"
             />
 
-            <h1>Log in to Summarist</h1>
+            <h1>
+              Log in to Summarist
+            </h1>
 
             <p>
-              Log in to manage your account
-              and access your subscription.
+              Log in to manage your
+              account and access your
+              subscription.
             </p>
 
             <button
@@ -278,20 +362,25 @@ function Settings() {
         </div>
 
         <section className="settings-card">
-          <h2>Account Information</h2>
+          <h2>
+            Account Information
+          </h2>
 
           <div className="settings-card__row">
             <span>Email</span>
 
             <strong>
-              {currentUser.email || "Not available"}
+              {currentUser.email ||
+                "Not available"}
             </strong>
           </div>
 
           <div className="settings-card__row">
             <span>Account Status</span>
 
-            <strong>Active</strong>
+            <strong>
+              Active
+            </strong>
           </div>
         </section>
 
@@ -303,36 +392,35 @@ function Settings() {
               className="settings-card__subscription"
               aria-live="polite"
             >
-              <div>
-                <h3>Loading subscription...</h3>
+              <div className="settings-card__loading">
+                <div className="skeleton settings-card__loading-title"></div>
 
-                <p>
-                  Checking your current plan
-                  and subscription status.
-                </p>
+                <div className="skeleton settings-card__loading-text"></div>
+
+                <div className="skeleton settings-card__loading-text settings-card__loading-text--short"></div>
               </div>
             </div>
           ) : (
             <div className="settings-card__subscription">
               <div>
                 <h3>
-                  {isPremium
-                    ? "Premium"
-                    : "Basic"}
+                  {getPlanName()}
                 </h3>
 
-                {isPremium ? (
+                {hasPremiumAccess ? (
                   <>
                     {isTrialing ? (
                       <p>
-                        Your 7-day Premium
-                        trial is currently
+                        Your 7-day
+                        Premium trial
+                        is currently
                         active.
                       </p>
                     ) : (
                       <p>
-                        You have an active
-                        Premium subscription.
+                        You have an
+                        active Premium
+                        subscription.
                       </p>
                     )}
 
@@ -351,7 +439,8 @@ function Settings() {
                     {!isTrialing &&
                       subscription.currentPeriodEnd && (
                         <p>
-                          Current billing period
+                          Current
+                          billing period
                           ends{" "}
                           <strong>
                             {formatSubscriptionDate(
@@ -361,38 +450,34 @@ function Settings() {
                         </p>
                       )}
 
-                    {subscription.cancelAtPeriodEnd && (
-                      <p className="settings-card__status settings-card__status--warning">
-                        Your Premium subscription
-                        is scheduled to end on{" "}
-                        <strong>
-                          {formatSubscriptionDate(
-                            subscription.currentPeriodEnd
-                          )}
-                        </strong>
-                        .
-                      </p>
-                    )}
+                    {subscription.cancelAtPeriodEnd &&
+                      subscription.currentPeriodEnd && (
+                        <p className="settings-card__status settings-card__status--warning">
+                          Your Premium
+                          subscription
+                          is scheduled
+                          to end on{" "}
+                          <strong>
+                            {formatSubscriptionDate(
+                              subscription.currentPeriodEnd
+                            )}
+                          </strong>
+                          .
+                        </p>
+                      )}
 
-                    {!subscription.cancelAtPeriodEnd && (
-                      <p className="settings-card__status">
-                        Status:{" "}
-                        {getSubscriptionStatusLabel()}
-                      </p>
-                    )}
-
-                    {subscription.cancelAtPeriodEnd && (
-                      <p className="settings-card__status">
-                        Status:{" "}
-                        {getSubscriptionStatusLabel()}
-                      </p>
-                    )}
+                    <p className="settings-card__status">
+                      Status:{" "}
+                      {getSubscriptionStatusLabel()}
+                    </p>
                   </>
                 ) : (
                   <>
                     <p>
-                      You currently have a
-                      free Summarist account.
+                      You currently
+                      have a free
+                      Summarist
+                      account.
                     </p>
 
                     <p className="settings-card__status">
@@ -402,7 +487,7 @@ function Settings() {
                 )}
               </div>
 
-              {isPremium ? (
+              {hasPremiumAccess ? (
                 <button
                   type="button"
                   className="book-page__button"
@@ -439,11 +524,13 @@ function Settings() {
         </section>
 
         <section className="settings-card settings-card--account-actions">
-          <h2>Account Actions</h2>
+          <h2>
+            Account Actions
+          </h2>
 
           <p>
-            Sign out of your Summarist account
-            on this device.
+            Sign out of your Summarist
+            account on this device.
           </p>
 
           <button
@@ -458,6 +545,14 @@ function Settings() {
           </button>
         </section>
       </div>
+
+      {showAuthModal && (
+        <AuthModal
+          onClose={() =>
+            setShowAuthModal(false)
+          }
+        />
+      )}
     </main>
   );
 }

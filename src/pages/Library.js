@@ -1,64 +1,68 @@
 import {
   useCallback,
   useEffect,
-  useMemo,
-  useRef,
   useState,
 } from "react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { get, ref, remove } from "firebase/database";
+import { Link } from "react-router-dom";
+import {
+  get,
+  ref,
+  remove,
+} from "firebase/database";
 
 import { database } from "../firebase";
 import { useAuth } from "../context/AuthContext";
 import AuthModal from "../components/AuthModal";
 
 function Library() {
-  const { currentUser } = useAuth();
-  const location = useLocation();
-  const navigate = useNavigate();
+  const {
+    currentUser,
+    isAuthenticated,
+  } = useAuth();
 
-  const [savedBooks, setSavedBooks] = useState([]);
-  const [finishedBooks, setFinishedBooks] = useState([]);
+  const [savedBooks, setSavedBooks] =
+    useState([]);
 
-  const [loading, setLoading] = useState(true);
+  const [finishedBooks, setFinishedBooks] =
+    useState([]);
 
-  const [filter, setFilter] = useState("all");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState("newest");
+  const [loading, setLoading] =
+    useState(true);
 
-  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showAuthModal, setShowAuthModal] =
+    useState(false);
 
-  const [bookToRemove, setBookToRemove] = useState(null);
-  const [isRemoving, setIsRemoving] = useState(false);
+  const [bookToRemove, setBookToRemove] =
+    useState(null);
 
-  const [toast, setToast] = useState("");
-  const [toastType, setToastType] = useState("success");
+  const [isRemoving, setIsRemoving] =
+    useState(false);
 
-  const cancelButtonRef = useRef(null);
-  const modalRef = useRef(null);
-  const previousFocusedElementRef = useRef(null);
-  const toastTimeoutRef = useRef(null);
+  const [toast, setToast] =
+    useState("");
 
-  const loadLibrary = useCallback(
-    async (showLoading = false) => {
-      if (!currentUser) {
+  const fetchLibrary =
+    useCallback(async () => {
+      if (
+        !currentUser ||
+        !isAuthenticated
+      ) {
         setSavedBooks([]);
         setFinishedBooks([]);
         setLoading(false);
         return;
       }
 
-      if (showLoading) {
-        setLoading(true);
-      }
+      setLoading(true);
 
       try {
         const libraryRef = ref(
           database,
-          `users/${currentUser.uid}/library`,
+          `users/${currentUser.uid}/library`
         );
 
-        const snapshot = await get(libraryRef);
+        const snapshot =
+          await get(libraryRef);
 
         if (!snapshot.exists()) {
           setSavedBooks([]);
@@ -66,328 +70,87 @@ function Library() {
           return;
         }
 
-        const data = snapshot.val();
-        const books = Object.values(data);
+        const libraryData =
+          snapshot.val();
 
-        const unfinished = books.filter(
-          (book) => !book.finished,
+        const books =
+          Object.values(libraryData);
+
+        const sortedBooks =
+          books.sort(
+            (a, b) =>
+              (b.savedAt || 0) -
+              (a.savedAt || 0)
+          );
+
+        setSavedBooks(
+          sortedBooks.filter(
+            (book) => !book.finished
+          )
         );
 
-        const finished = books.filter(
-          (book) => book.finished,
+        setFinishedBooks(
+          sortedBooks.filter(
+            (book) => book.finished
+          )
         );
-
-        unfinished.sort(
-          (a, b) =>
-            (b.savedAt || 0) -
-            (a.savedAt || 0),
-        );
-
-        finished.sort(
-          (a, b) =>
-            (b.savedAt || 0) -
-            (a.savedAt || 0),
-        );
-
-        setSavedBooks(unfinished);
-        setFinishedBooks(finished);
       } catch (error) {
         console.error(
-          "Failed to load library:",
-          error,
+          "Failed to fetch library:",
+          error
         );
+
+        setSavedBooks([]);
+        setFinishedBooks([]);
       } finally {
-        if (showLoading) {
-          setLoading(false);
-        }
+        setLoading(false);
       }
-    },
-    [currentUser],
-  );
+    }, [
+      currentUser,
+      isAuthenticated,
+    ]);
 
   useEffect(() => {
-    loadLibrary(true);
-  }, [loadLibrary, location.key]);
+    fetchLibrary();
+  }, [fetchLibrary]);
 
   useEffect(() => {
-    const refreshLibrary = () => {
-      if (!currentUser) {
-        return;
-      }
-
-      loadLibrary(false);
+    const handleWindowFocus = () => {
+      fetchLibrary();
     };
 
     window.addEventListener(
       "focus",
-      refreshLibrary,
+      handleWindowFocus
     );
 
     return () => {
       window.removeEventListener(
         "focus",
-        refreshLibrary,
+        handleWindowFocus
       );
     };
-  }, [currentUser, loadLibrary]);
-
-  const showToast = useCallback(
-    (message, type = "success") => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-
-      setToastType(type);
-      setToast(message);
-
-      toastTimeoutRef.current = setTimeout(() => {
-        setToast("");
-        toastTimeoutRef.current = null;
-      }, 3000);
-    },
-    [],
-  );
+  }, [fetchLibrary]);
 
   useEffect(() => {
-    return () => {
-      if (toastTimeoutRef.current) {
-        clearTimeout(toastTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const getProgress = (book) => {
-    const progress = Number(book.progress);
-    const duration = Number(book.duration);
-
-    if (
-      !Number.isFinite(progress) ||
-      !Number.isFinite(duration) ||
-      duration <= 0
-    ) {
-      return 0;
-    }
-
-    return Math.min(
-      100,
-      Math.max(
-        0,
-        (progress / duration) * 100,
-      ),
-    );
-  };
-
-  const formatTime = (seconds) => {
-    if (
-      !Number.isFinite(seconds) ||
-      seconds < 0
-    ) {
-      return "0:00";
-    }
-
-    const totalSeconds = Math.floor(seconds);
-    const minutes = Math.floor(
-      totalSeconds / 60,
-    );
-    const remainingSeconds =
-      totalSeconds % 60;
-
-    return `${minutes}:${String(
-      remainingSeconds,
-    ).padStart(2, "0")}`;
-  };
-
-  const continueListeningBooks = useMemo(() => {
-    return savedBooks
-      .filter((book) => {
-        const progress = Number(book.progress);
-        const duration = Number(book.duration);
-
-        return (
-          Number.isFinite(progress) &&
-          Number.isFinite(duration) &&
-          duration > 0 &&
-          progress > 0 &&
-          progress < duration &&
-          !book.finished
-        );
-      })
-      .sort(
-        (a, b) =>
-          (b.lastPlayedAt || 0) -
-          (a.lastPlayedAt || 0),
-      );
-  }, [savedBooks]);
-
-  const allLibraryBooks = useMemo(() => {
-    return [
-      ...savedBooks,
-      ...finishedBooks,
-    ];
-  }, [savedBooks, finishedBooks]);
-
-  const filteredBooks = useMemo(() => {
-    let books = [...allLibraryBooks];
-
-    if (filter === "in-progress") {
-      books = books.filter((book) => {
-        const progress = Number(book.progress);
-        const duration = Number(book.duration);
-
-        return (
-          !book.finished &&
-          Number.isFinite(progress) &&
-          Number.isFinite(duration) &&
-          duration > 0 &&
-          progress > 0 &&
-          progress < duration
-        );
-      });
-    }
-
-    if (filter === "not-started") {
-      books = books.filter((book) => {
-        const progress = Number(book.progress);
-
-        return (
-          !book.finished &&
-          (!Number.isFinite(progress) ||
-            progress <= 0)
-        );
-      });
-    }
-
-    if (filter === "finished") {
-      books = books.filter(
-        (book) => book.finished,
-      );
-    }
-
-    const search = searchTerm
-      .trim()
-      .toLowerCase();
-
-    if (search) {
-      books = books.filter((book) => {
-        const title = (
-          book.title || ""
-        ).toLowerCase();
-
-        const author = (
-          book.author || ""
-        ).toLowerCase();
-
-        return (
-          title.includes(search) ||
-          author.includes(search)
-        );
-      });
-    }
-
-    if (sortBy === "newest") {
-      books.sort(
-        (a, b) =>
-          (b.savedAt || 0) -
-          (a.savedAt || 0),
-      );
-    }
-
-    if (sortBy === "recently-listened") {
-      books.sort(
-        (a, b) =>
-          (b.lastPlayedAt || 0) -
-          (a.lastPlayedAt || 0),
-      );
-    }
-
-    if (sortBy === "title") {
-      books.sort((a, b) =>
-        (a.title || "").localeCompare(
-          b.title || "",
-        ),
-      );
-    }
-
-    if (sortBy === "author") {
-      books.sort((a, b) =>
-        (a.author || "").localeCompare(
-          b.author || "",
-        ),
-      );
-    }
-
-    return books;
-  }, [
-    allLibraryBooks,
-    filter,
-    searchTerm,
-    sortBy,
-  ]);
-
-  const handleRemoveBook = (book, event) => {
-    if (!currentUser || !book) {
+    if (!toast) {
       return;
     }
 
-    previousFocusedElementRef.current =
-      event?.currentTarget || null;
+    const timeout = setTimeout(() => {
+      setToast("");
+    }, 3000);
+
+    return () => clearTimeout(timeout);
+  }, [toast]);
+
+  const handleRemoveClick = (book) => {
+    if (!isAuthenticated) {
+      setShowAuthModal(true);
+      return;
+    }
 
     setBookToRemove(book);
-  };
-
-  const confirmRemoveBook = async () => {
-    if (
-      !currentUser ||
-      !bookToRemove ||
-      isRemoving
-    ) {
-      return;
-    }
-
-    setIsRemoving(true);
-
-    try {
-      const bookRef = ref(
-        database,
-        `users/${currentUser.uid}/library/${bookToRemove.id}`,
-      );
-
-      await remove(bookRef);
-
-      setSavedBooks((books) =>
-        books.filter(
-          (item) =>
-            String(item.id) !==
-            String(bookToRemove.id),
-        ),
-      );
-
-      setFinishedBooks((books) =>
-        books.filter(
-          (item) =>
-            String(item.id) !==
-            String(bookToRemove.id),
-        ),
-      );
-
-      showToast(
-        `"${bookToRemove.title}" was removed from your library.`,
-      );
-
-      setBookToRemove(null);
-    } catch (error) {
-      console.error(
-        "Failed to remove book:",
-        error,
-      );
-
-      showToast(
-        "Failed to remove the book from your library.",
-        "error",
-      );
-    } finally {
-      setIsRemoving(false);
-    }
   };
 
   const cancelRemoveBook = () => {
@@ -398,161 +161,234 @@ function Library() {
     setBookToRemove(null);
   };
 
-  useEffect(() => {
-    if (!bookToRemove) {
-      return;
-    }
-
-    previousFocusedElementRef.current =
-      previousFocusedElementRef.current ||
-      document.activeElement;
-
-    const focusTimer = setTimeout(() => {
-      cancelButtonRef.current?.focus();
-    }, 0);
-
-    return () => {
-      clearTimeout(focusTimer);
-    };
-  }, [bookToRemove]);
-
-  useEffect(() => {
-    if (!bookToRemove) {
-      return;
-    }
-
-    const handleKeyDown = (event) => {
-      if (event.key === "Escape") {
-        if (!isRemoving) {
-          event.preventDefault();
-          cancelRemoveBook();
-        }
-
-        return;
-      }
-
-      if (event.key !== "Tab") {
-        return;
-      }
-
-      const modal = modalRef.current;
-
-      if (!modal) {
-        return;
-      }
-
-      const focusableElements =
-        modal.querySelectorAll(
-          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-        );
-
-      if (!focusableElements.length) {
-        return;
-      }
-
-      const firstElement =
-        focusableElements[0];
-
-      const lastElement =
-        focusableElements[
-          focusableElements.length - 1
-        ];
-
-      if (
-        event.shiftKey &&
-        document.activeElement === firstElement
-      ) {
-        event.preventDefault();
-        lastElement.focus();
-      } else if (
-        !event.shiftKey &&
-        document.activeElement === lastElement
-      ) {
-        event.preventDefault();
-        firstElement.focus();
-      }
-    };
-
-    document.addEventListener(
-      "keydown",
-      handleKeyDown,
-    );
-
-    return () => {
-      document.removeEventListener(
-        "keydown",
-        handleKeyDown,
-      );
-    };
-  }, [bookToRemove, isRemoving]);
-
-  useEffect(() => {
-    if (bookToRemove) {
-      return;
-    }
-
-    const previousElement =
-      previousFocusedElementRef.current;
-
+  const confirmRemoveBook = async () => {
     if (
-      previousElement &&
-      typeof previousElement.focus === "function" &&
-      document.contains(previousElement)
+      !currentUser ||
+      !isAuthenticated ||
+      !bookToRemove ||
+      isRemoving
     ) {
-      const focusTimer = setTimeout(() => {
-        previousElement.focus();
-      }, 0);
-
-      previousFocusedElementRef.current =
-        null;
-
-      return () => {
-        clearTimeout(focusTimer);
-      };
+      return;
     }
-  }, [bookToRemove]);
+
+    setIsRemoving(true);
+
+    try {
+      const bookId = String(
+        bookToRemove.id
+      );
+
+      const bookRef = ref(
+        database,
+        `users/${currentUser.uid}/library/${bookId}`
+      );
+
+      await remove(bookRef);
+
+      setSavedBooks((books) =>
+        books.filter(
+          (book) =>
+            String(book.id) !==
+            bookId
+        )
+      );
+
+      setFinishedBooks((books) =>
+        books.filter(
+          (book) =>
+            String(book.id) !==
+            bookId
+        )
+      );
+
+      setToast(
+        `"${bookToRemove.title}" was removed from your library.`
+      );
+
+      setBookToRemove(null);
+    } catch (error) {
+      console.error(
+        "Failed to remove book:",
+        error
+      );
+
+      setToast(
+        "Unable to remove the book. Please try again."
+      );
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
+  const renderBookCard = (
+    book,
+    isFinished = false
+  ) => {
+    return (
+      <div
+        className="book-card library-book-card"
+        key={book.id}
+      >
+        <Link to={`/book/${book.id}`}>
+          <div className="book-card__image-wrapper">
+            {book.subscriptionRequired && (
+              <span className="book-card__premium">
+                Premium
+              </span>
+            )}
+
+            <img
+              src={book.imageLink}
+              alt={book.title}
+              className="book-card__image"
+            />
+          </div>
+
+          <h3>{book.title}</h3>
+
+          <p>{book.author}</p>
+        </Link>
+
+        {isFinished && (
+          <div
+            className="library-book-card__finished"
+            role="status"
+          >
+            ✓ Finished
+          </div>
+        )}
+
+        <button
+          type="button"
+          className="library-book-card__remove"
+          onClick={() =>
+            handleRemoveClick(book)
+          }
+          aria-label={`Remove ${book.title} from your library`}
+        >
+          Remove
+        </button>
+      </div>
+    );
+  };
 
   if (loading) {
     return (
       <main className="library-page">
-        <div className="library__container">
-          <div className="skeleton skeleton__selected"></div>
+        <div className="library-page__container">
+          <div className="library-page__header">
+            <div
+              className="skeleton"
+              style={{
+                width: "220px",
+                height: "40px",
+                marginBottom: "12px",
+              }}
+            />
 
-          <div className="skeleton__grid">
-            {new Array(6)
-              .fill(0)
-              .map((_, index) => (
-                <div
-                  className="skeleton skeleton__book"
-                  key={index}
-                ></div>
-              ))}
+            <div
+              className="skeleton"
+              style={{
+                width: "420px",
+                maxWidth: "100%",
+                height: "20px",
+              }}
+            />
           </div>
+
+          <section className="library-section">
+            <div
+              className="skeleton"
+              style={{
+                width: "150px",
+                height: "28px",
+                marginBottom: "22px",
+              }}
+            />
+
+            <div className="book-grid">
+              {[1, 2, 3, 4, 5].map(
+                (item) => (
+                  <div key={item}>
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "100%",
+                        aspectRatio:
+                          "2 / 3",
+                        marginBottom:
+                          "12px",
+                      }}
+                    />
+
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "80%",
+                        height: "16px",
+                        marginBottom:
+                          "8px",
+                      }}
+                    />
+
+                    <div
+                      className="skeleton"
+                      style={{
+                        width: "55%",
+                        height: "14px",
+                      }}
+                    />
+                  </div>
+                )
+              )}
+            </div>
+          </section>
         </div>
       </main>
     );
   }
 
-  if (!currentUser) {
+  if (
+    !currentUser ||
+    !isAuthenticated
+  ) {
     return (
       <main className="library-page">
-        <div className="library__container">
-          <div className="library__empty">
-            <h1>Your Library</h1>
+        <div className="library-page__container">
+          <div className="library-page__header">
+            <h1>My Library</h1>
 
             <p>
-              Log in to save books and keep
-              track of your listening progress.
+              Log in to save books and
+              keep track of your reading.
+            </p>
+          </div>
+
+          <div className="library-empty">
+            <div className="library-empty__icon">
+              ▣
+            </div>
+
+            <h3>
+              Log in to view your library
+            </h3>
+
+            <p>
+              Your saved and finished
+              books will appear here.
             </p>
 
             <button
               type="button"
-              className="library__empty-button"
+              className="book-page__button"
               onClick={() =>
                 setShowAuthModal(true)
               }
+              style={{
+                marginTop: "20px",
+              }}
             >
-              Log In
+              Log in
             </button>
           </div>
         </div>
@@ -568,533 +404,132 @@ function Library() {
     );
   }
 
-  const totalBooks =
-    allLibraryBooks.length;
-
-  const inProgressCount =
-    savedBooks.filter((book) => {
-      const progress = Number(book.progress);
-      const duration = Number(book.duration);
-
-      return (
-        !book.finished &&
-        Number.isFinite(progress) &&
-        Number.isFinite(duration) &&
-        duration > 0 &&
-        progress > 0 &&
-        progress < duration
-      );
-    }).length;
-
-  const notStartedCount =
-    savedBooks.filter((book) => {
-      const progress = Number(book.progress);
-
-      return (
-        !book.finished &&
-        (!Number.isFinite(progress) ||
-          progress <= 0)
-      );
-    }).length;
-
-  const finishedCount =
-    finishedBooks.length;
-
   return (
     <main className="library-page">
-      <div className="library__container">
-        <div className="library__header">
-          <div>
-            <h1>My Library</h1>
+      <div className="library-page__container">
+        <div className="library-page__header">
+          <h1>My Library</h1>
 
-            <p>
-              Your saved books and listening
-              progress.
-            </p>
-          </div>
-
-          <div className="library__counts">
-            <span>
-              {totalBooks}{" "}
-              {totalBooks === 1
-                ? "Book"
-                : "Books"}
-            </span>
-          </div>
+          <p>
+            Your saved books and finished
+            books.
+          </p>
         </div>
 
-        {continueListeningBooks.length > 0 && (
-          <section className="library-section">
-            <div className="library-section__header">
-              <div>
-                <h2>Continue Listening</h2>
-
-                <p>
-                  Pick up where you left off.
-                </p>
-              </div>
-            </div>
-
-            <div className="book-grid">
-              {continueListeningBooks.map(
-                (book) => {
-                  const progress =
-                    getProgress(book);
-
-                  return (
-                    <div
-                      className="library-book-card"
-                      key={book.id}
-                    >
-                      <Link
-                        to={`/book/${book.id}`}
-                      >
-                        <div className="book-card__image-wrapper">
-                          {book.subscriptionRequired && (
-                            <span className="book-card__premium">
-                              Premium
-                            </span>
-                          )}
-
-                          <img
-                            src={book.imageLink}
-                            alt={book.title}
-                            className="book-card__image"
-                          />
-                        </div>
-
-                        <h3>{book.title}</h3>
-
-                        <p>{book.author}</p>
-                      </Link>
-
-                      <div className="library-book-card__progress">
-                        <div className="library-book-card__progress-header">
-                          <span>
-                            {formatTime(
-                              book.progress,
-                            )}{" "}
-                            /{" "}
-                            {formatTime(
-                              book.duration,
-                            )}
-                          </span>
-
-                          <span>
-                            {Math.round(
-                              progress,
-                            )}
-                            %
-                          </span>
-                        </div>
-
-                        <div className="library-book-card__progress-track">
-                          <div
-                            className="library-book-card__progress-bar"
-                            style={{
-                              width: `${progress}%`,
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-
-                      <Link
-                        to={`/player/${book.id}`}
-                        className="library-book-card__continue"
-                      >
-                        Continue listening
-                      </Link>
-
-                      <button
-                        type="button"
-                        className="library-book-card__remove"
-                        onClick={(event) =>
-                          handleRemoveBook(
-                            book,
-                            event,
-                          )
-                        }
-                        aria-label={`Remove ${book.title} from your library`}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  );
-                },
-              )}
-            </div>
-          </section>
+        {toast && (
+          <div
+            className="library-toast"
+            role="status"
+            aria-live="polite"
+          >
+            {toast}
+          </div>
         )}
 
         <section className="library-section">
           <div className="library-section__header">
-            <div>
-              <h2>Library</h2>
-
-              <p>
-                Manage your saved books.
-              </p>
-            </div>
+            <h2>Saved Books</h2>
           </div>
 
-          <div className="library__controls">
-            <div className="library__search">
-              <input
-                type="search"
-                placeholder="Search your library..."
-                value={searchTerm}
-                onChange={(event) =>
-                  setSearchTerm(
-                    event.target.value,
-                  )
-                }
-                aria-label="Search your library"
-              />
-            </div>
-
-            <div className="library__sort">
-              <label htmlFor="library-sort">
-                Sort
-              </label>
-
-              <select
-                id="library-sort"
-                value={sortBy}
-                onChange={(event) =>
-                  setSortBy(
-                    event.target.value,
-                  )
-                }
-              >
-                <option value="newest">
-                  Newest Added
-                </option>
-
-                <option value="recently-listened">
-                  Recently Listened
-                </option>
-
-                <option value="title">
-                  Title A–Z
-                </option>
-
-                <option value="author">
-                  Author A–Z
-                </option>
-              </select>
-            </div>
-          </div>
-
-          <div className="library__filters">
-            <button
-              type="button"
-              className={
-                filter === "all"
-                  ? "library__filter library__filter--active"
-                  : "library__filter"
-              }
-              onClick={() =>
-                setFilter("all")
-              }
-            >
-              All ({totalBooks})
-            </button>
-
-            <button
-              type="button"
-              className={
-                filter === "in-progress"
-                  ? "library__filter library__filter--active"
-                  : "library__filter"
-              }
-              onClick={() =>
-                setFilter("in-progress")
-              }
-            >
-              In Progress ({inProgressCount})
-            </button>
-
-            <button
-              type="button"
-              className={
-                filter === "not-started"
-                  ? "library__filter library__filter--active"
-                  : "library__filter"
-              }
-              onClick={() =>
-                setFilter("not-started")
-              }
-            >
-              Not Started ({notStartedCount})
-            </button>
-
-            <button
-              type="button"
-              className={
-                filter === "finished"
-                  ? "library__filter library__filter--active"
-                  : "library__filter"
-              }
-              onClick={() =>
-                setFilter("finished")
-              }
-            >
-              Finished ({finishedCount})
-            </button>
-          </div>
-
-          {filteredBooks.length > 0 ? (
+          {savedBooks.length > 0 ? (
             <div className="book-grid">
-              {filteredBooks.map((book) => {
-                const progress =
-                  getProgress(book);
-
-                return (
-                  <div
-                    className="library-book-card"
-                    key={book.id}
-                  >
-                    <Link
-                      to={`/book/${book.id}`}
-                    >
-                      <div className="book-card__image-wrapper">
-                        {book.subscriptionRequired && (
-                          <span className="book-card__premium">
-                            Premium
-                          </span>
-                        )}
-
-                        <img
-                          src={book.imageLink}
-                          alt={book.title}
-                          className="book-card__image"
-                        />
-                      </div>
-
-                      <h3>{book.title}</h3>
-
-                      <p>{book.author}</p>
-                    </Link>
-
-                    {book.finished ? (
-                      <span className="library-book-card__finished">
-                        ✓ Finished
-                      </span>
-                    ) : progress > 0 ? (
-                      <div className="library-book-card__progress">
-                        <div className="library-book-card__progress-header">
-                          <span>
-                            {formatTime(
-                              book.progress,
-                            )}{" "}
-                            /{" "}
-                            {formatTime(
-                              book.duration,
-                            )}
-                          </span>
-
-                          <span>
-                            {Math.round(
-                              progress,
-                            )}
-                            %
-                          </span>
-                        </div>
-
-                        <div className="library-book-card__progress-track">
-                          <div
-                            className="library-book-card__progress-bar"
-                            style={{
-                              width: `${progress}%`,
-                            }}
-                          ></div>
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="library-book-card__continue">
-                        Not started
-                      </span>
-                    )}
-
-                    {!book.finished &&
-                      progress > 0 && (
-                        <Link
-                          to={`/player/${book.id}`}
-                          className="library-book-card__continue"
-                        >
-                          Continue listening
-                        </Link>
-                      )}
-
-                    <button
-                      type="button"
-                      className="library-book-card__remove"
-                      onClick={(event) =>
-                        handleRemoveBook(
-                          book,
-                          event,
-                        )
-                      }
-                      aria-label={`Remove ${book.title} from your library`}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                );
-              })}
+              {savedBooks.map((book) =>
+                renderBookCard(book)
+              )}
             </div>
           ) : (
-            <div className="library__empty">
-              <h2>
-                {searchTerm
-                  ? "No Books Found"
-                  : filter === "all"
-                  ? "Your Library Is Empty"
-                  : "No Books in This Filter"}
-              </h2>
+            <div className="library-empty">
+              <div className="library-empty__icon">
+                ▣
+              </div>
+
+              <h3>
+                Your library is empty
+              </h3>
 
               <p>
-                {searchTerm
-                  ? "Try a different title or author."
-                  : filter === "all"
-                  ? "Start exploring books and add them to your library."
-                  : "Try selecting another filter to see your saved books."}
+                Add books from the book
+                page and they'll appear
+                here.
               </p>
-
-              {searchTerm ? (
-                <button
-                  type="button"
-                  className="library__empty-button"
-                  onClick={() =>
-                    setSearchTerm("")
-                  }
-                >
-                  Clear Search
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  className="library__empty-button"
-                  onClick={() =>
-                    navigate("/for-you")
-                  }
-                >
-                  Browse Books
-                </button>
-              )}
             </div>
           )}
         </section>
 
-        {finishedBooks.length > 0 &&
-          filter === "all" &&
-          !searchTerm && (
-            <section className="library-section">
-              <div className="library-section__header">
-                <div>
-                  <h2>Finished Books</h2>
+        <section className="library-section">
+          <div className="library-section__header">
+            <h2>Finished Books</h2>
+          </div>
 
-                  <p>
-                    Books you've completed.
-                  </p>
-                </div>
+          {finishedBooks.length > 0 ? (
+            <div className="book-grid">
+              {finishedBooks.map(
+                (book) =>
+                  renderBookCard(
+                    book,
+                    true
+                  )
+              )}
+            </div>
+          ) : (
+            <div className="library-empty">
+              <div className="library-empty__icon">
+                ✓
               </div>
 
-              <div className="book-grid">
-                {finishedBooks.map((book) => (
-                  <div
-                    className="library-book-card"
-                    key={`finished-${book.id}`}
-                  >
-                    <Link
-                      to={`/book/${book.id}`}
-                    >
-                      <div className="book-card__image-wrapper">
-                        {book.subscriptionRequired && (
-                          <span className="book-card__premium">
-                            Premium
-                          </span>
-                        )}
+              <h3>
+                No finished books yet
+              </h3>
 
-                        <img
-                          src={book.imageLink}
-                          alt={book.title}
-                          className="book-card__image"
-                        />
-                      </div>
-
-                      <h3>{book.title}</h3>
-
-                      <p>{book.author}</p>
-                    </Link>
-
-                    <span className="library-book-card__finished">
-                      ✓ Finished
-                    </span>
-
-                    <button
-                      type="button"
-                      className="library-book-card__remove"
-                      onClick={(event) =>
-                        handleRemoveBook(
-                          book,
-                          event,
-                        )
-                      }
-                      aria-label={`Remove ${book.title} from your library`}
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </section>
+              <p>
+                Books you finish listening
+                to will appear here.
+              </p>
+            </div>
           )}
+        </section>
       </div>
 
       {bookToRemove && (
         <div
-          className="library-modal"
+          className="library-modal__overlay"
           role="presentation"
+          onMouseDown={(event) => {
+            if (
+              event.target ===
+              event.currentTarget
+            ) {
+              cancelRemoveBook();
+            }
+          }}
         >
           <div
-            ref={modalRef}
-            className="library-modal__content"
+            className="library-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="remove-book-title"
             aria-describedby="remove-book-description"
           >
-            <button
-              type="button"
-              className="library-modal__close"
-              onClick={cancelRemoveBook}
-              disabled={isRemoving}
-              aria-label="Close removal confirmation"
-            >
-              ×
-            </button>
-
             <h2 id="remove-book-title">
-              Remove Book?
+              Remove book?
             </h2>
 
             <p id="remove-book-description">
-              Are you sure you want to remove{" "}
+              Are you sure you want to
+              remove{" "}
               <strong>
-                "{bookToRemove.title}"
+                {bookToRemove.title}
               </strong>{" "}
-              from your library? Your listening
-              progress will also no longer be
-              associated with this saved book.
+              from your library?
             </p>
 
             <div className="library-modal__actions">
               <button
-                ref={cancelButtonRef}
                 type="button"
                 className="library-modal__cancel"
-                onClick={cancelRemoveBook}
+                onClick={
+                  cancelRemoveBook
+                }
                 disabled={isRemoving}
               >
                 Cancel
@@ -1103,40 +538,17 @@ function Library() {
               <button
                 type="button"
                 className="library-modal__confirm"
-                onClick={confirmRemoveBook}
+                onClick={
+                  confirmRemoveBook
+                }
                 disabled={isRemoving}
               >
                 {isRemoving
                   ? "Removing..."
-                  : "Remove Book"}
+                  : "Remove"}
               </button>
             </div>
           </div>
-        </div>
-      )}
-
-      {toast && (
-        <div
-          className={`library-toast library-toast--${toastType}`}
-          role="status"
-          aria-live="polite"
-        >
-          <span className="library-toast__icon">
-            {toastType === "error"
-              ? "!"
-              : "✓"}
-          </span>
-
-          <span>{toast}</span>
-
-          <button
-            type="button"
-            className="library-toast__close"
-            onClick={() => setToast("")}
-            aria-label="Close notification"
-          >
-            ×
-          </button>
         </div>
       )}
 
