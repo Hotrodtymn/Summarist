@@ -14,6 +14,9 @@ function ForYou() {
   const [suggestedBooks, setSuggestedBooks] =
     useState([]);
 
+  const [searchTerm, setSearchTerm] =
+    useState("");
+
   const [loading, setLoading] =
     useState(true);
 
@@ -121,6 +124,50 @@ function ForYou() {
     };
   }, []);
 
+  const normalizedSearch =
+    searchTerm.trim().toLowerCase();
+
+  const matchesSearch = (book) => {
+    if (!normalizedSearch) {
+      return true;
+    }
+
+    const searchableText = [
+      book.title,
+      book.author,
+      book.subTitle,
+      book.description,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+
+    return searchableText.includes(
+      normalizedSearch
+    );
+  };
+
+  const filteredSelectedBook =
+    selectedBook &&
+    matchesSearch(selectedBook)
+      ? selectedBook
+      : null;
+
+  const filteredRecommendedBooks =
+    recommendedBooks.filter(
+      matchesSearch
+    );
+
+  const filteredSuggestedBooks =
+    suggestedBooks.filter(
+      matchesSearch
+    );
+
+  const totalSearchResults =
+    (filteredSelectedBook ? 1 : 0) +
+    filteredRecommendedBooks.length +
+    filteredSuggestedBooks.length;
+
   if (loading) {
     return (
       <main className="for-you">
@@ -147,7 +194,9 @@ function ForYou() {
       <main className="for-you">
         <div className="books__container">
           <div className="library__empty">
-            <h1>Unable to load books</h1>
+            <h1>
+              Unable to load books
+            </h1>
 
             <p>{error}</p>
 
@@ -169,149 +218,384 @@ function ForYou() {
   return (
     <main className="for-you">
       <div className="books__container">
-        {selectedBook && (
-          <section className="selected-book">
-            <Link
-              to={`/book/${selectedBook.id}`}
+        {/* Search */}
+        <section className="for-you__search">
+          <div className="for-you__search-wrapper">
+            <span
+              className="for-you__search-icon"
+              aria-hidden="true"
             >
-              <div className="selected-book__image-wrapper">
-                {selectedBook.subscriptionRequired && (
-                  <span className="book-card__premium">
-                    Premium
-                  </span>
-                )}
+              ⌕
+            </span>
 
-                <img
-                  src={selectedBook.imageLink}
-                  alt={selectedBook.title}
-                />
-              </div>
+            <input
+              type="search"
+              className="for-you__search-input"
+              placeholder="Search books, authors, or topics..."
+              value={searchTerm}
+              onChange={(event) =>
+                setSearchTerm(
+                  event.target.value
+                )
+              }
+              aria-label="Search books"
+            />
 
-              <div className="selected-book__content">
-                <h1>
-                  {selectedBook.title}
-                </h1>
+            {searchTerm && (
+              <button
+                type="button"
+                className="for-you__search-clear"
+                onClick={() =>
+                  setSearchTerm("")
+                }
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+          </div>
+        </section>
+
+        {/* Search Results */}
+        {normalizedSearch ? (
+          <>
+            <div className="for-you__search-results">
+              <h1>Search results</h1>
+
+              <p>
+                {totalSearchResults}{" "}
+                {totalSearchResults === 1
+                  ? "book"
+                  : "books"}{" "}
+                found for "
+                {searchTerm}"
+              </p>
+            </div>
+
+            {totalSearchResults === 0 ? (
+              <div className="for-you__no-results">
+                <div className="for-you__no-results-icon">
+                  🔎
+                </div>
+
+                <h2>
+                  No books found
+                </h2>
 
                 <p>
-                  {selectedBook.author}
+                  Try searching for a
+                  different title, author,
+                  or topic.
                 </p>
 
-                {selectedBook.subTitle && (
-                  <p>
-                    {selectedBook.subTitle}
-                  </p>
-                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setSearchTerm("")
+                  }
+                >
+                  Clear search
+                </button>
               </div>
-            </Link>
-          </section>
+            ) : (
+              <>
+                {filteredSelectedBook && (
+                  <section className="selected-book">
+                    <Link
+                      to={`/book/${filteredSelectedBook.id}`}
+                    >
+                      <div className="selected-book__image-wrapper">
+                        {filteredSelectedBook.subscriptionRequired && (
+                          <span className="book-card__premium">
+                            Premium
+                          </span>
+                        )}
+
+                        <img
+                          src={
+                            filteredSelectedBook.imageLink
+                          }
+                          alt={
+                            filteredSelectedBook.title
+                          }
+                        />
+                      </div>
+
+                      <div className="selected-book__content">
+                        <h1>
+                          {
+                            filteredSelectedBook.title
+                          }
+                        </h1>
+
+                        <p>
+                          {
+                            filteredSelectedBook.author
+                          }
+                        </p>
+
+                        {filteredSelectedBook.subTitle && (
+                          <p>
+                            {
+                              filteredSelectedBook.subTitle
+                            }
+                          </p>
+                        )}
+                      </div>
+                    </Link>
+                  </section>
+                )}
+
+                {filteredRecommendedBooks.length >
+                  0 && (
+                  <section className="book-section">
+                    <h2>
+                      Recommended For You
+                    </h2>
+
+                    <div className="book-grid">
+                      {filteredRecommendedBooks.map(
+                        (book) => (
+                          <Link
+                            to={`/book/${book.id}`}
+                            className="book-card"
+                            key={book.id}
+                          >
+                            <div className="book-card__image-wrapper">
+                              {book.subscriptionRequired && (
+                                <span className="book-card__premium">
+                                  Premium
+                                </span>
+                              )}
+
+                              <img
+                                src={
+                                  book.imageLink
+                                }
+                                alt={
+                                  book.title
+                                }
+                                className="book-card__image"
+                              />
+                            </div>
+
+                            <h3>
+                              {book.title}
+                            </h3>
+
+                            <p>
+                              {book.author}
+                            </p>
+                          </Link>
+                        )
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {filteredSuggestedBooks.length >
+                  0 && (
+                  <section className="book-section">
+                    <h2>
+                      Suggested For You
+                    </h2>
+
+                    <div className="book-grid">
+                      {filteredSuggestedBooks.map(
+                        (book) => (
+                          <Link
+                            to={`/book/${book.id}`}
+                            className="book-card"
+                            key={book.id}
+                          >
+                            <div className="book-card__image-wrapper">
+                              {book.subscriptionRequired && (
+                                <span className="book-card__premium">
+                                  Premium
+                                </span>
+                              )}
+
+                              <img
+                                src={
+                                  book.imageLink
+                                }
+                                alt={
+                                  book.title
+                                }
+                                className="book-card__image"
+                              />
+                            </div>
+
+                            <h3>
+                              {book.title}
+                            </h3>
+
+                            <p>
+                              {book.author}
+                            </p>
+                          </Link>
+                        )
+                      )}
+                    </div>
+                  </section>
+                )}
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            {/* Selected Book */}
+            {selectedBook && (
+              <section className="selected-book">
+                <Link
+                  to={`/book/${selectedBook.id}`}
+                >
+                  <div className="selected-book__image-wrapper">
+                    {selectedBook.subscriptionRequired && (
+                      <span className="book-card__premium">
+                        Premium
+                      </span>
+                    )}
+
+                    <img
+                      src={
+                        selectedBook.imageLink
+                      }
+                      alt={
+                        selectedBook.title
+                      }
+                    />
+                  </div>
+
+                  <div className="selected-book__content">
+                    <h1>
+                      {selectedBook.title}
+                    </h1>
+
+                    <p>
+                      {selectedBook.author}
+                    </p>
+
+                    {selectedBook.subTitle && (
+                      <p>
+                        {selectedBook.subTitle}
+                      </p>
+                    )}
+                  </div>
+                </Link>
+              </section>
+            )}
+
+            {/* Recommended */}
+            <section className="book-section">
+              <h2>
+                Recommended For You
+              </h2>
+
+              {recommendedBooks.length > 0 ? (
+                <div className="book-grid">
+                  {recommendedBooks.map(
+                    (book) => (
+                      <Link
+                        to={`/book/${book.id}`}
+                        className="book-card"
+                        key={book.id}
+                      >
+                        <div className="book-card__image-wrapper">
+                          {book.subscriptionRequired && (
+                            <span className="book-card__premium">
+                              Premium
+                            </span>
+                          )}
+
+                          <img
+                            src={
+                              book.imageLink
+                            }
+                            alt={
+                              book.title
+                            }
+                            className="book-card__image"
+                          />
+                        </div>
+
+                        <h3>
+                          {book.title}
+                        </h3>
+
+                        <p>
+                          {book.author}
+                        </p>
+                      </Link>
+                    )
+                  )}
+                </div>
+              ) : (
+                <div className="library-empty">
+                  <p>
+                    No recommended books
+                    are available right
+                    now.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {/* Suggested */}
+            <section className="book-section">
+              <h2>
+                Suggested For You
+              </h2>
+
+              {suggestedBooks.length > 0 ? (
+                <div className="book-grid">
+                  {suggestedBooks.map(
+                    (book) => (
+                      <Link
+                        to={`/book/${book.id}`}
+                        className="book-card"
+                        key={book.id}
+                      >
+                        <div className="book-card__image-wrapper">
+                          {book.subscriptionRequired && (
+                            <span className="book-card__premium">
+                              Premium
+                            </span>
+                          )}
+
+                          <img
+                            src={
+                              book.imageLink
+                            }
+                            alt={
+                              book.title
+                            }
+                            className="book-card__image"
+                          />
+                        </div>
+
+                        <h3>
+                          {book.title}
+                        </h3>
+
+                        <p>
+                          {book.author}
+                        </p>
+                      </Link>
+                    )
+                  )}
+                </div>
+              ) : (
+                <div className="library-empty">
+                  <p>
+                    No suggested books are
+                    available right now.
+                  </p>
+                </div>
+              )}
+            </section>
+          </>
         )}
-
-        <section className="book-section">
-          <h2>
-            Recommended For You
-          </h2>
-
-          {recommendedBooks.length > 0 ? (
-            <div className="book-grid">
-              {recommendedBooks.map(
-                (book) => (
-                  <Link
-                    to={`/book/${book.id}`}
-                    className="book-card"
-                    key={book.id}
-                  >
-                    <div className="book-card__image-wrapper">
-                      {book.subscriptionRequired && (
-                        <span className="book-card__premium">
-                          Premium
-                        </span>
-                      )}
-
-                      <img
-                        src={
-                          book.imageLink
-                        }
-                        alt={
-                          book.title
-                        }
-                        className="book-card__image"
-                      />
-                    </div>
-
-                    <h3>
-                      {book.title}
-                    </h3>
-
-                    <p>
-                      {book.author}
-                    </p>
-                  </Link>
-                )
-              )}
-            </div>
-          ) : (
-            <div className="library-empty">
-              <p>
-                No recommended books
-                are available right
-                now.
-              </p>
-            </div>
-          )}
-        </section>
-
-        <section className="book-section">
-          <h2>
-            Suggested For You
-          </h2>
-
-          {suggestedBooks.length > 0 ? (
-            <div className="book-grid">
-              {suggestedBooks.map(
-                (book) => (
-                  <Link
-                    to={`/book/${book.id}`}
-                    className="book-card"
-                    key={book.id}
-                  >
-                    <div className="book-card__image-wrapper">
-                      {book.subscriptionRequired && (
-                        <span className="book-card__premium">
-                          Premium
-                        </span>
-                      )}
-
-                      <img
-                        src={
-                          book.imageLink
-                        }
-                        alt={
-                          book.title
-                        }
-                        className="book-card__image"
-                      />
-                    </div>
-
-                    <h3>
-                      {book.title}
-                    </h3>
-
-                    <p>
-                      {book.author}
-                    </p>
-                  </Link>
-                )
-              )}
-            </div>
-          ) : (
-            <div className="library-empty">
-              <p>
-                No suggested books are
-                available right now.
-              </p>
-            </div>
-          )}
-        </section>
       </div>
     </main>
   );
