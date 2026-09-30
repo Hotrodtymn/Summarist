@@ -41,7 +41,7 @@ exports.createCheckoutSession = onCall(
       const stripe = new Stripe(stripeSecretKey.value());
 
       try {
-        const session = await stripe.checkout.sessions.create({
+        const checkoutData = {
           mode: "subscription",
 
           line_items: [
@@ -52,8 +52,6 @@ exports.createCheckoutSession = onCall(
           ],
 
           subscription_data: {
-            trial_period_days: 7,
-
             metadata: {
               firebaseUid: request.auth.uid,
             },
@@ -62,18 +60,27 @@ exports.createCheckoutSession = onCall(
           client_reference_id: request.auth.uid,
 
           success_url:
-          "https://summarist-ebon.vercel.app/settings?subscription=success",
+            "https://summarist-ebon.vercel.app/settings?subscription=success",
 
           cancel_url:
-          "https://summarist-ebon.vercel.app/choose-plan?subscription=cancelled",
+            "https://summarist-ebon.vercel.app/choose-plan?subscription=cancelled",
 
           customer_email: request.auth.token.email || undefined,
-        });
+        };
+
+        // The original requirements specify a 7-day free trial
+        // for the yearly subscription.
+        if (billingPeriod === "yearly") {
+          checkoutData.subscription_data.trial_period_days = 7;
+        }
+
+        const session =
+          await stripe.checkout.sessions.create(checkoutData);
 
         const subscriptionId =
-  typeof session.subscription === "string" ?
-    session.subscription :
-    session.subscription?.id;
+          typeof session.subscription === "string" ?
+            session.subscription :
+            session.subscription?.id;
 
         let trialEnd = null;
         let currentPeriodEnd = null;
@@ -81,17 +88,17 @@ exports.createCheckoutSession = onCall(
 
         if (subscriptionId) {
           const subscription =
-    await stripe.subscriptions.retrieve(
-        subscriptionId,
-    );
+            await stripe.subscriptions.retrieve(
+                subscriptionId,
+            );
 
           trialEnd = subscription.trial_end || null;
 
           currentPeriodEnd =
-    subscription.current_period_end || null;
+            subscription.current_period_end || null;
 
           cancelAtPeriodEnd =
-    subscription.cancel_at_period_end || false;
+            subscription.cancel_at_period_end || false;
         }
 
         await admin
@@ -99,13 +106,13 @@ exports.createCheckoutSession = onCall(
             .ref(`users/${request.auth.uid}/subscription`)
             .update({
               plan: "premium",
-              status: "trialing",
+              status: trialEnd ? "trialing" : "active",
               stripeCustomerId:
-      typeof session.customer === "string" ?
-        session.customer :
-        session.customer?.id || null,
+                typeof session.customer === "string" ?
+                  session.customer :
+                  session.customer?.id || null,
               stripeSubscriptionId:
-      subscriptionId || null,
+                subscriptionId || null,
               cancelAtPeriodEnd,
               currentPeriodEnd,
               trialEnd,
@@ -163,12 +170,12 @@ exports.createCustomerPortalSession = onCall(
         const stripe = new Stripe(stripeSecretKey.value());
 
         const portalSession =
-        await stripe.billingPortal.sessions.create({
-          customer: customerId,
+          await stripe.billingPortal.sessions.create({
+            customer: customerId,
 
-          return_url:
-            "https://summarist-ebon.vercel.app/settings",
-        });
+            return_url:
+              "https://summarist-ebon.vercel.app/settings",
+          });
 
         return {
           url: portalSession.url,
@@ -200,7 +207,6 @@ exports.stripeWebhook = onRequest(
 
       if (req.method !== "POST") {
         res.status(405).send("Method Not Allowed");
-
         return;
       }
 
@@ -210,7 +216,6 @@ exports.stripeWebhook = onRequest(
 
       if (!signature) {
         res.status(400).send("Missing Stripe signature.");
-
         return;
       }
 
@@ -246,26 +251,25 @@ exports.stripeWebhook = onRequest(
 
             if (!firebaseUid) {
               console.error("No Firebase UID found.");
-
               break;
             }
 
             const subscriptionId =
-            typeof session.subscription === "string" ?
-              session.subscription :
-              session.subscription?.id;
+              typeof session.subscription === "string" ?
+                session.subscription :
+                session.subscription?.id;
 
             const customerId =
-            typeof session.customer === "string" ?
-              session.customer :
-              session.customer?.id;
+              typeof session.customer === "string" ?
+                session.customer :
+                session.customer?.id;
 
             await admin
                 .database()
                 .ref(`users/${firebaseUid}/subscription`)
                 .update({
                   plan: "premium",
-                  status: "trialing",
+                  status: "active",
                   stripeCustomerId: customerId || null,
                   stripeSubscriptionId: subscriptionId || null,
                   cancelAtPeriodEnd: false,
@@ -286,7 +290,7 @@ exports.stripeWebhook = onRequest(
             const subscription = event.data.object;
 
             const firebaseUid =
-            subscription.metadata?.firebaseUid;
+              subscription.metadata?.firebaseUid;
 
             if (!firebaseUid) {
               console.error(
@@ -297,8 +301,8 @@ exports.stripeWebhook = onRequest(
             }
 
             const isPremium =
-            subscription.status === "active" ||
-            subscription.status === "trialing";
+              subscription.status === "active" ||
+              subscription.status === "trialing";
 
             await admin
                 .database()
@@ -308,20 +312,20 @@ exports.stripeWebhook = onRequest(
                   status: subscription.status,
 
                   stripeCustomerId:
-                typeof subscription.customer === "string" ?
-                  subscription.customer :
-                  subscription.customer?.id || null,
+                    typeof subscription.customer === "string" ?
+                      subscription.customer :
+                      subscription.customer?.id || null,
 
                   stripeSubscriptionId: subscription.id,
 
                   cancelAtPeriodEnd:
-                subscription.cancel_at_period_end || false,
+                    subscription.cancel_at_period_end || false,
 
                   currentPeriodEnd:
-                subscription.current_period_end || null,
+                    subscription.current_period_end || null,
 
                   trialEnd:
-                subscription.trial_end || null,
+                    subscription.trial_end || null,
 
                   updatedAt: Date.now(),
                 });
@@ -333,7 +337,7 @@ exports.stripeWebhook = onRequest(
             const subscription = event.data.object;
 
             const firebaseUid =
-            subscription.metadata?.firebaseUid;
+              subscription.metadata?.firebaseUid;
 
             if (!firebaseUid) {
               console.error(
@@ -352,9 +356,9 @@ exports.stripeWebhook = onRequest(
                   stripeSubscriptionId: subscription.id,
                   cancelAtPeriodEnd: false,
                   currentPeriodEnd:
-                subscription.current_period_end || null,
+                    subscription.current_period_end || null,
                   trialEnd:
-                subscription.trial_end || null,
+                    subscription.trial_end || null,
                   updatedAt: Date.now(),
                 });
 
@@ -382,126 +386,3 @@ exports.stripeWebhook = onRequest(
       }
     },
 );
-
-exports.getProtectedBook = onCall(async (request) => {
-  if (!request.auth) {
-    throw new HttpsError(
-        "unauthenticated",
-        "You must be signed in to access this book.",
-    );
-  }
-
-  const bookId = request.data?.bookId;
-
-  if (!bookId) {
-    throw new HttpsError(
-        "invalid-argument",
-        "A book ID is required.",
-    );
-  }
-
-  const userId = request.auth.uid;
-
-  try {
-    const subscriptionSnapshot = await admin
-        .database()
-        .ref(`users/${userId}/subscription`)
-        .once("value");
-
-    const subscription = subscriptionSnapshot.val();
-
-    const isPremium =
-      subscription &&
-      subscription.plan === "premium" &&
-      (
-        subscription.status === "trialing" ||
-        subscription.status === "active"
-      );
-
-    const bookResponse = await fetch(
-        `https://us-central1-summaristt.cloudfunctions.net/getBook?id=${bookId}`,
-    );
-
-    if (!bookResponse.ok) {
-      throw new HttpsError(
-          "not-found",
-          "Book could not be found.",
-      );
-    }
-
-    const book = await bookResponse.json();
-
-    if (book.subscriptionRequired && !isPremium) {
-      throw new HttpsError(
-          "permission-denied",
-          "Premium subscription required.",
-      );
-    }
-
-    let protectedAudioLink = book.audioLink;
-
-    if (book.audioLink) {
-      try {
-        const audioUrl = new URL(book.audioLink);
-
-        const encodedPath =
-          audioUrl.pathname.split("/o/")[1];
-
-        if (!encodedPath) {
-          throw new Error(
-              "Unable to determine audio file path.",
-          );
-        }
-
-        const filePath =
-          decodeURIComponent(encodedPath);
-
-        const bucket =
-          admin.storage().bucket(
-              "summaristt.appspot.com",
-          );
-
-        const file = bucket.file(filePath);
-
-        const [signedUrl] =
-          await file.getSignedUrl({
-            version: "v4",
-            action: "read",
-            expires: Date.now() + 5 * 60 * 1000,
-          });
-
-        protectedAudioLink = signedUrl;
-      } catch (audioError) {
-        console.error(
-            "Failed to create protected audio URL:",
-            audioError,
-        );
-
-        throw new HttpsError(
-            "internal",
-            "Unable to secure the book audio.",
-        );
-      }
-    }
-
-    return {
-      ...book,
-      audioLink: protectedAudioLink,
-      accessGranted: true,
-    };
-  } catch (error) {
-    if (error instanceof HttpsError) {
-      throw error;
-    }
-
-    console.error(
-        "Protected book error:",
-        error,
-    );
-
-    throw new HttpsError(
-        "internal",
-        "Unable to load the book.",
-    );
-  }
-});
