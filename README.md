@@ -1,71 +1,152 @@
-# Getting Started with Create React App
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# Summarist
+
+### Audiobook Summary and Personal Library Platform
+
+Summarist is a responsive web application built with React and Firebase that provides an interactive platform for discovering, reading, and listening to book summaries.
+
+The project combines frontend development, user authentication, audio playback, and account-based library features into a multi-page application.
+
+## Live Demo
+
+[Launch Summarist](https://summarist-ebon.vercel.app/)
+
+## Technologies Used
+
+- React
+- JavaScript
+- HTML5
+- CSS3
+- React Router
+- Firebase
+- React Icons
+- Git and GitHub
+- Vercel
+
+## Key Features
+
+### User Authentication
+Firebase integration supports user authentication and account-based application experiences.
+
+### Book Discovery
+Users can browse available book summaries through a structured, responsive interface.
+
+### Audio Playback
+An integrated audio player provides an alternative way to experience book summaries.
+
+### Personal Library
+Users can manage their saved content through a personal library interface.
+
+### Responsive Design
+Layouts and navigation are designed to accommodate different screen sizes.
+
+### Client-Side Routing
+React Router enables navigation between the application's pages without full page reloads.
+
+## Screenshots
+
+Application screenshots will be added to showcase the homepage, book details, audio player, and personal library.
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js
+- npm
+- Git
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/Hotrodtymn/Summarist.git
+```
+
+### 2. Navigate to the Project
+
+```bash
+cd Summarist
+```
+
+### 3. Install Dependencies
+
+```bash
+npm install
+```
+
+### 4. Start the Development Server
+
+```bash
+npm start
+```
+
+### 5. Open the Application
+
+Visit http://localhost:3000
+
+Some functionality requires valid Firebase configuration and access to the application's supporting services.
 
 ## Available Scripts
 
-In the project directory, you can run:
+| Command | Description |
+| --- | --- |
+| `npm start` | Starts the development server |
+| `npm test` | Runs the React test runner |
+| `npm run build` | Creates a production build |
 
-### `npm start`
+## Project Structure
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+```text
+Summarist/
+├── public/
+├── src/
+│   ├── assets/
+│   ├── components/
+│   ├── context/
+│   ├── hooks/
+│   ├── pages/
+│   ├── services/
+│   ├── utils/
+│   ├── App.js
+│   └── firebase.js
+├── functions/
+├── firebase.json
+└── package.json
+```
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## Development Experience
 
-### `npm test`
+Developing Summarist involved integrating several application features into a cohesive user experience.
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+Key development areas included:
 
-### `npm run build`
+- Building reusable React components
+- Implementing client-side navigation
+- Integrating Firebase authentication
+- Managing user-dependent application state
+- Developing audio playback interfaces
+- Building responsive layouts
+- Debugging and refining application behavior
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+## Lessons Learned
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+This project provided practical experience with React application architecture, Firebase integration, state management, and maintaining consistency across multiple pages.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+It also reinforced the importance of organizing components, separating application responsibilities, and testing user interactions.
 
-### `npm run eject`
+## Future Improvements
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+Potential enhancements include:
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+- Expanded automated test coverage
+- Additional accessibility improvements
+- Further audio player refinements
+- Performance optimization
+- Improved error handling and loading states
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+These are possible future improvements, not claims about features already implemented.
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## Developer
 
-## Learn More
+**Thomas Babb** — Frontend Developer
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
-
-### Analyzing the Bundle Size
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
-
-### Making a Progressive Web App
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
-
-### Advanced Configuration
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
-
-### Deployment
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
-
-### `npm run build` fails to minify
-
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
-# Summarist
+[Portfolio](https://thomas-babb-portfolio-z91p-sigma.vercel.app/) | [LinkedIn](https://www.linkedin.com/in/thomasbabbpm/) | [GitHub](https://github.com/Hotrodtymn)
